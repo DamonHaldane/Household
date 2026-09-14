@@ -2,7 +2,14 @@
 <html lang="en-AU">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1B2A33">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Household">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Household finances</title>
 <script src="config.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +26,17 @@
   html,body{margin:0;padding:0}
   body{background:var(--paper);color:var(--ink);font-family:'Archivo','Helvetica Neue',Helvetica,Arial,sans-serif;
     font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
-  .wrap{max-width:900px;margin:0 auto;padding:26px 20px 70px}
+  .wrap{max-width:900px;margin:0 auto;
+    padding:calc(26px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right))
+            calc(70px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left))}
+  #gate{padding:calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom))}
+  /* stop iOS zooming the page when a field is focused */
+  @media (max-width:760px){ input,select{font-size:16px} }
+  .updatebar{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));
+    background:var(--ink);color:#fff;border-radius:10px;padding:12px 14px;font-size:13.5px;
+    display:flex;align-items:center;gap:12px;z-index:50;box-shadow:0 4px 18px rgba(27,42,51,.28)}
+  .updatebar button{background:#fff;color:var(--ink);border:0;border-radius:6px;
+    padding:7px 13px;font:inherit;font-weight:600;cursor:pointer;margin-left:auto}
 
   #gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
   .card-box{width:100%;max-width:360px}
@@ -60,7 +77,7 @@
   .seg{display:flex;gap:2px;background:var(--rule-soft);padding:3px;border-radius:6px;flex-wrap:wrap}
   .seg button{font:inherit;font-size:12.5px;border:0;background:none;color:var(--ink-soft);padding:4px 10px;border-radius:4px;cursor:pointer}
   .seg button[aria-pressed="true"]{background:var(--field);color:var(--ink);font-weight:600}
-  svg.chart{display:block;width:100%;height:auto;overflow:visible;touch-action:none;cursor:crosshair}
+  svg.chart{display:block;width:100%;height:auto;overflow:visible;touch-action:pan-y;cursor:crosshair}
   .legend{font-size:12.5px;color:var(--ink-soft);margin-top:8px}
   .scrub{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;font-size:13px;color:var(--ink-soft);min-height:24px;margin-top:8px}
   .scrub b{color:var(--ink);font-weight:600;font-size:16px}
@@ -79,6 +96,13 @@
   .due.soon{color:var(--warn);font-weight:600}
   .due.over{color:var(--bad);font-weight:600}
   .in{color:var(--accent)}
+  .row.paused{opacity:.55}
+  .row.paused .clip{text-decoration:line-through;text-decoration-color:var(--ink-faint)}
+  .mini.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+  .pausebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--rule-soft);
+    border-radius:8px;padding:10px 13px;font-size:13px;color:var(--ink);margin-top:10px}
+  .pausebar strong{font-weight:700}
+  .pausebar button{background:none;border:0;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer;padding:0;margin-left:auto}
   .row.clickable{cursor:pointer}
   .row.clickable:hover{background:var(--rule-soft)}
   .chip{display:inline-flex;align-items:center;gap:6px;background:var(--rule-soft);border-radius:999px;padding:4px 6px 4px 13px;font-size:13px;margin-bottom:14px}
@@ -165,6 +189,46 @@
     .total-amt{font-size:28px}
     .due{width:74px}
   }
+  /* Fold cover screen and small phones */
+  @media (max-width:520px){
+    .wrap{padding-left:calc(14px + env(safe-area-inset-left));padding-right:calc(14px + env(safe-area-inset-right))}
+    form.spend,form.rec,form.acct{grid-template-columns:1fr}
+    nav{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap}
+    nav button{flex:0 0 auto;padding:8px 12px}
+    header{gap:10px}
+    .seg{width:100%} .seg button{flex:1;text-align:center;padding:7px 6px}
+    .chartbar > div{width:100%}
+
+    /* rows reflow onto two lines instead of squeezing */
+    .row{flex-wrap:wrap;row-gap:4px;padding:11px 0}
+    .row .grow{flex:1 1 100%;order:1}
+    .row .dot{order:0}
+    .row .due{order:2;width:auto;text-align:left;flex:0 0 auto}
+    .row .amt{order:3;width:auto!important;margin-left:auto}
+    .row .mini,.row .del{order:4}
+    .row .mini{margin-left:8px}
+
+    /* thumb-sized targets */
+    .del{padding:9px 12px;font-size:20px}
+    .mini{padding:9px 12px}
+    .monthnav button{width:36px;height:36px}
+
+    .figures{border-bottom:0}
+    .fig .v{font-size:23px}
+    .total-amt{font-size:26px}
+    .cardstats{gap:14px}
+    .cardstat{flex:1 1 46%}
+    .ovrow{max-width:none}
+    .ef-row{flex-direction:column}
+    .scrub{gap:10px}
+    .scrub b{font-size:15px}
+  }
+
+  /* Fold inner screen is nearly square — keep lines readable, not full width */
+  @media (min-width:720px) and (max-aspect-ratio:5/4){
+    .wrap{max-width:760px}
+  }
+
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -224,6 +288,7 @@
       <svg class="chart" id="chart" viewBox="0 0 840 250" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Projected balance over time"></svg>
       <div class="scrub" id="scrub"></div>
       <div class="legend" id="chartLegend"></div>
+      <div class="pausebar" id="pauseBar" hidden></div>
     </section>
 
     <section class="block" id="cardSection" hidden>
@@ -469,9 +534,13 @@ function applyReceive(bal,accId,amount){
   bal[accId]=(bal[accId]||0)+(a.type==='credit'?-amount:amount);
 }
 
-function project(days){
+const isPaused=i=>!!i.paused;
+const activeRecurring=withPaused=>data.recurring.filter(i=>withPaused||!isPaused(i));
+const anyPaused=()=>data.recurring.some(isPaused);
+
+function project(days,withPaused){
   const end=addDays(TODAY,days), events={};
-  data.recurring.forEach(i=>occurrences(i,addDays(TODAY,1),end).forEach(d=>{
+  activeRecurring(withPaused).forEach(i=>occurrences(i,addDays(TODAY,1),end).forEach(d=>{
     const k=iso(d); (events[k]=events[k]||[]).push(i);
   }));
   // anything already logged with a future date
@@ -512,11 +581,23 @@ function seriesValue(b){
 const VIEW_LABEL={everyday:'Everyday accounts',credit:'Credit card owing',savings:'Savings',net:'Net position'};
 const VIEW_COLOUR={everyday:'#0F6B52',credit:'#6B4E7D',savings:'#3A7089',net:'#1B2A33'};
 
+function chartBox(){
+  const el=$('chart');
+  const cw=Math.round((el&&el.clientWidth)||840);
+  const W=Math.max(300,Math.min(cw||840,1100));
+  const narrow=W<520;
+  return {W, H:narrow?230:250, L:narrow?50:62, R:narrow?8:14, T:14, B:26, narrow};
+}
+
 function drawChart(){
   const {pts,perDay}=project(horizon);
-  const W=840,H=250,L=62,R=14,T=14,B=26;
+  const paused=anyPaused();
+  const ghost=paused?project(horizon,true).pts.map(p=>seriesValue(p.bal)):null;
+  const {W,H,L,R,T,B,narrow}=chartBox();
+  $('chart').setAttribute('viewBox',`0 0 ${W} ${H}`);
   const vals=pts.map(p=>seriesValue(p.bal));
-  let lo=Math.min(0,...vals), hi=Math.max(...vals);
+  const span=ghost?vals.concat(ghost):vals;
+  let lo=Math.min(0,...span), hi=Math.max(...span);
   if(hi===lo) hi=lo+100;
   const pad=(hi-lo)*0.12; lo-=pad; hi+=pad;
   const x=i=>L+(i/(pts.length-1))*(W-L-R);
@@ -527,17 +608,26 @@ function drawChart(){
   const base=y(Math.max(lo,0)).toFixed(1);
   const area=`${line} L${x(pts.length-1).toFixed(1)},${base} L${x(0).toFixed(1)},${base} Z`;
 
+  const steps=narrow?2:3;
+  const short=v=>{const a=Math.abs(v);
+    return (a>=1000?(v/1000).toFixed(a>=10000?0:1).replace(/\.0$/,'')+'k':Math.round(v).toString());};
   let grid='';
-  for(let g=0;g<=3;g++){
-    const v=lo+(hi-lo)*g/3, yy=y(v);
+  for(let g=0;g<=steps;g++){
+    const v=lo+(hi-lo)*g/steps, yy=y(v);
     grid+=`<line x1="${L}" x2="${W-R}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" stroke="var(--rule-soft)" stroke-width="1"/>
-      <text x="${L-8}" y="${(yy+4).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--ink-faint)">${money(v)}</text>`;
+      <text x="${L-6}" y="${(yy+4).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--ink-faint)">${narrow?'$'+short(v):money(v)}</text>`;
   }
   const zero=(lo<0&&hi>0)?`<line x1="${L}" x2="${W-R}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" stroke="var(--bad)" stroke-width="1" stroke-dasharray="4 3"/>`:'';
 
-  let ticks='';
-  pts.forEach((p,i)=>{ if(p.date.getDate()===1||i===0)
-    ticks+=`<text x="${x(i).toFixed(1)}" y="${H-6}" text-anchor="middle" font-size="11" fill="var(--ink-faint)">${p.date.toLocaleDateString('en-AU',{month:'short'})}</text>`; });
+  let ticks='', tickCount=0;
+  const every=narrow&&horizon>180?2:1;
+  pts.forEach((p,i)=>{
+    if(p.date.getDate()===1||i===0){
+      if(p.date.getDate()===1) tickCount++;
+      if(p.date.getDate()===1&&every>1&&tickCount%every!==0) return;
+      ticks+=`<text x="${x(i).toFixed(1)}" y="${H-6}" text-anchor="middle" font-size="11" fill="var(--ink-faint)">${p.date.toLocaleDateString('en-AU',{month:'short'})}</text>`;
+    }
+  });
 
   let marks='';
   pts.forEach((p,i)=>p.events.forEach(e=>{
@@ -549,21 +639,28 @@ function drawChart(){
   const wv=vals[worst];
   const wMark=`<circle cx="${x(worst).toFixed(1)}" cy="${y(wv).toFixed(1)}" r="4.5" fill="none" stroke="${wv<0?'var(--bad)':'var(--ink)'}" stroke-width="1.5"/>`;
 
-  chartGeom={pts,vals,x,y,W,H,L,R,T,B};
+  chartGeom={pts,vals,x,y,W,H,L,R,T,B,narrow};
   $('chart').innerHTML=`
     <defs><linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="${col}" stop-opacity="0.16"/>
       <stop offset="100%" stop-color="${col}" stop-opacity="0.01"/>
     </linearGradient></defs>
     ${grid}${zero}<path d="${area}" fill="url(#fade)"/>
+    ${ghost?`<path d="${ghost.map((v,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--ink-faint)" stroke-width="1.5" stroke-dasharray="5 4" stroke-linejoin="round"/>`:''}
     <path d="${line}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>
     ${marks}${wMark}${ticks}<g id="cursorG"></g>`;
   showScrub(null);
 
   let varTotal=0; for(const k in perDay) varTotal+=perDay[k];
-  $('chartLegend').textContent = varTotal>0
+  let legend = varTotal>0
     ? `${VIEW_LABEL[view]}. Includes everyday spending of about ${money2(varTotal)}/day, averaged from recent transactions and charged to the accounts you've been using.`
     : `${VIEW_LABEL[view]}. Scheduled items only — tick the box to factor in everyday spending.`;
+  if(ghost){
+    const diff=vals[vals.length-1]-ghost[ghost.length-1];
+    const better=view==='credit'?diff<0:diff>0;
+    legend+=` Dashed line is where you'd be with the paused items still running — ${money2(Math.abs(diff))} ${better?'better':'worse'} off by ${pts[pts.length-1].date.toLocaleDateString('en-AU',{month:'long'})}.`;
+  }
+  $('chartLegend').textContent=legend;
 }
 
 function showScrub(i){
@@ -639,6 +736,25 @@ function limitBreach(){
   return null;
 }
 
+function renderPauseBar(){
+  const bar=$('pauseBar');
+  const off=data.recurring.filter(isPaused);
+  if(!off.length){ bar.hidden=true; return; }
+  bar.hidden=false;
+
+  const perMonth=off.reduce((s,i)=>s+(i.kind==='income'?-monthlyEquiv(i):monthlyEquiv(i)),0);
+  const withThem=project(horizon,true).pts, without=project(horizon,false).pts;
+  const ev=p=>sumOf('everyday',p.bal);
+  const lowA=Math.min(...withThem.map(ev)), lowB=Math.min(...without.map(ev));
+  const delta=lowB-lowA;
+
+  bar.innerHTML=`<span><strong>${off.length} item${off.length===1?'':'s'} paused</strong> — `+
+    (perMonth>=0?`${money2(perMonth)} a month not going out`:`${money2(-perMonth)} a month not coming in`)+
+    `. Everyday low point ${delta>=0?'improves':'drops'} by ${money2(Math.abs(delta))}, `+
+    `${money2(lowA)} → ${money2(lowB)}.</span>`+
+    `<button id="resumeAll">Resume all</button>`;
+}
+
 function renderCard(){
   if(!accountsOf('credit').length){ $('cardSection').hidden=true; return; }
   $('cardSection').hidden=false;
@@ -677,7 +793,7 @@ function renderCard(){
 
 function renderUpcoming(){
   const end=addDays(TODAY,30), list=[];
-  data.recurring.forEach(i=>{
+  activeRecurring(false).forEach(i=>{
     const d=parseISO(i.next);
     if(d<=end&&d>=TODAY) list.push({item:i,date:d});
     else if(d<TODAY) list.push({item:i,date:d});
@@ -790,12 +906,13 @@ function recRow(i){
   const path=i.kind==='transfer'
     ? `${esc((acct(i.account)||{}).name||'')} → ${esc((acct(i.to)||{}).name||'')}`
     : esc((acct(i.account)||{}).name||'');
-  return `<div class="row"><span class="dot" style="background:${c}"></span>
+  return `<div class="row${i.paused?' paused':''}"><span class="dot" style="background:${c}"></span>
     <span class="grow"><span class="clip">${esc(i.name)}</span>
-      <div class="meta">${FREQ[i.freq]} · ${money2(monthlyEquiv(i))}/mth · ${path}</div></span>
-    <span class="due ${cls}">${when}</span>
+      <div class="meta">${i.paused?'Paused · ':''}${FREQ[i.freq]} · ${money2(monthlyEquiv(i))}/mth · ${path}</div></span>
+    <span class="due ${cls}">${i.paused?'—':when}</span>
     <span class="amt${i.kind==='income'?' in':''}" style="width:88px">${i.kind==='income'?'+':''}${money2(i.amount)}</span>
-    <button class="mini" data-paid="${i.id}">${i.kind==='income'?'Received':i.kind==='transfer'?'Done':'Mark paid'}</button>
+    ${i.paused?'':`<button class="mini" data-paid="${i.id}">${i.kind==='income'?'Received':i.kind==='transfer'?'Done':'Mark paid'}</button>`}
+    <button class="mini${i.paused?' on':''}" data-pause="${i.id}" aria-pressed="${i.paused?'true':'false'}">${i.paused?'Resume':'Pause'}</button>
     <button class="mini" data-eopen="${i.id}">Edit</button>
     <button class="del" data-rdel="${i.id}" aria-label="Delete">&times;</button></div>`;
 }
@@ -803,8 +920,14 @@ function recRow(i){
 function renderRecurring(){
   const g=k=>data.recurring.filter(i=>i.kind===k).sort((a,b)=>a.next.localeCompare(b.next));
   const bills=g('bill'), income=g('income'), transfers=g('transfer');
-  $('billTotal').textContent=bills.length?`${money2(bills.reduce((s,i)=>s+monthlyEquiv(i),0))} a month`:'';
-  $('incomeTotal').textContent=income.length?`${money2(income.reduce((s,i)=>s+monthlyEquiv(i),0))} a month`:'';
+  const mth=arr=>arr.reduce((s,i)=>s+monthlyEquiv(i),0);
+  const label=arr=>{
+    const on=arr.filter(i=>!i.paused), off=arr.filter(i=>i.paused);
+    if(!arr.length) return '';
+    return `${money2(mth(on))} a month`+(off.length?` · ${money2(mth(off))} paused`:'');
+  };
+  $('billTotal').textContent=label(bills);
+  $('incomeTotal').textContent=label(income);
   $('billList').innerHTML=bills.length?bills.map(recRow).join(''):'<div class="empty" style="border-top:0">No bills scheduled yet.</div>';
   $('incomeList').innerHTML=income.length?income.map(recRow).join(''):'<div class="empty" style="border-top:0">No income scheduled. Add your pay so the forecast has both sides.</div>';
   $('transferList').innerHTML=transfers.length?transfers.map(recRow).join(''):'<div class="empty" style="border-top:0">No transfers yet. Add your card repayment and any savings deposit here.</div>';
@@ -878,7 +1001,7 @@ function updateRecHint(){
 
 function renderAll(){
   fillAccountSelects();
-  drawChart(); renderFigures(); renderCard(); renderUpcoming();
+  drawChart(); renderFigures(); renderPauseBar(); renderCard(); renderUpcoming();
   renderBand('dashSummary','dashCats',new Date());
   $('monthMeta').textContent=monthName(new Date());
   renderTrend(); renderSpend(); renderRecurring(); renderAccounts();
@@ -905,11 +1028,27 @@ $('horizon').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   horizon=Number(b.dataset.d);
   $('horizon').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
-  drawChart(); renderFigures();
+  drawChart(); renderFigures(); renderPauseBar();
 });
 $('incVar').addEventListener('change',e=>{includeVariable=e.target.checked;drawChart();renderFigures();renderCard();});
 
 const chart=$('chart'); let scrubbing=false;
+
+/* the Fold changes screen size mid-session; redraw rather than stretch */
+let resizeTimer, lastW=window.innerWidth;
+function onViewportChange(){
+  clearTimeout(resizeTimer);
+  resizeTimer=setTimeout(()=>{
+    if(Math.abs(window.innerWidth-lastW)<12) return;
+    lastW=window.innerWidth;
+    drawChart();
+  },140);
+}
+window.addEventListener('resize',onViewportChange);
+if(window.visualViewport) window.visualViewport.addEventListener('resize',onViewportChange);
+if('ResizeObserver' in window){
+  try{ new ResizeObserver(onViewportChange).observe(chart.parentElement); }catch(e){}
+}
 chart.addEventListener('pointerdown',e=>{scrubbing=true;chart.setPointerCapture(e.pointerId);scrubFrom(e.clientX);});
 chart.addEventListener('pointermove',e=>{if(scrubbing||e.pointerType==='mouse')scrubFrom(e.clientX);});
 chart.addEventListener('pointerup',()=>{scrubbing=false;});
@@ -1005,6 +1144,15 @@ document.addEventListener('click',async e=>{
     renderAll(); await persist();
   }
 
+  const pz=e.target.closest('[data-pause]');
+  if(pz){
+    const i=data.recurring.find(x=>String(x.id)===pz.dataset.pause); if(!i)return;
+    i.paused=!i.paused;
+    renderAll(); await persist();
+    status(i.paused?`${i.name} paused — the dashed line shows where you'd be with it.`:`${i.name} back on.`,5000);
+    return;
+  }
+
   const eopen=e.target.closest('[data-eopen]');
   if(eopen){ editingId=eopen.dataset.eopen; renderRecurring(); return; }
   if(e.target.closest('[data-ecancel]')){ editingId=null; renderRecurring(); return; }
@@ -1054,6 +1202,12 @@ document.addEventListener('click',async e=>{
     a.asAtTs=Date.now();
     renderAll(); await persist();
     status(`${a.name} set to ${money2(a.balance)} as of today.`,5000);
+    return;
+  }
+  if(e.target.closest('#resumeAll')){
+    data.recurring.forEach(i=>delete i.paused);
+    renderAll(); persist();
+    status('All items back on.',4000);
     return;
   }
   if(e.target.closest('#goRecon')){
@@ -1140,6 +1294,33 @@ async function startApp(){
       try{ const d=await Store.load(); if(d){ data=migrate(d); renderAll(); } }catch(e){}
     });
   }
+}
+
+/* installable app: register the worker, and surface updates rather than
+   silently serving an old build */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      reg.addEventListener('updatefound',()=>{
+        const w=reg.installing; if(!w)return;
+        w.addEventListener('statechange',()=>{
+          if(w.state==='installed'&&navigator.serviceWorker.controller) showUpdateBar(w);
+        });
+      });
+    }).catch(()=>{});
+    let reloading=false;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{
+      if(reloading)return; reloading=true; location.reload();
+    });
+  });
+}
+function showUpdateBar(worker){
+  if(document.querySelector('.updatebar'))return;
+  const bar=document.createElement('div');
+  bar.className='updatebar';
+  bar.innerHTML='<span>A newer version is ready.</span><button>Update</button>';
+  bar.querySelector('button').addEventListener('click',()=>worker.postMessage('skipWaiting'));
+  document.body.appendChild(bar);
 }
 
 if(!CLOUD){ startApp(); }
