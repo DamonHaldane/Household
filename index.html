@@ -126,6 +126,18 @@
   .settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
   .settings label{display:block;font-size:12.5px;color:var(--ink-soft);margin-bottom:4px}
   .acctcard{border:1px solid var(--rule);border-radius:10px;padding:16px;margin-bottom:14px}
+  .nowline{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-top:10px}
+  .nowline .k{font-size:12.5px;color:var(--ink-soft)}
+  .nowval{font-size:26px;font-weight:700;letter-spacing:-0.02em;line-height:1.1}
+  .nowval.owe{color:var(--card)} .nowval.bad{color:var(--bad)}
+  .staleflag{color:var(--warn);font-weight:600}
+  .override{margin-top:14px;padding-top:13px;border-top:1px solid var(--rule-soft)}
+  .override label{display:block;font-size:12.5px;color:var(--ink-soft);margin-bottom:6px}
+  .ovrow{display:flex;gap:8px;align-items:stretch;max-width:330px}
+  .ovrow input{flex:1}
+  .ovrow .mini{white-space:nowrap;padding:0 12px}
+  .stalebar{background:#FDF6E7;border:1px solid #EBD9AE;color:#7A5A14;border-radius:var(--radius);padding:10px 13px;font-size:13px;margin-bottom:20px}
+  .stalebar button{background:none;border:0;color:#7A5A14;font:inherit;text-decoration:underline;cursor:pointer;padding:0}
 
   .empty{border:1px dashed var(--rule);border-radius:var(--radius);padding:24px 18px;text-align:center;color:var(--ink-soft)}
   .monthnav{display:flex;align-items:center;gap:4px}
@@ -182,6 +194,7 @@
   <div class="banner" id="localBanner" hidden>Saving to this browser only. Add your Supabase details to <code>config.js</code> to share.</div>
 
   <div id="tab-dash">
+    <div class="stalebar" id="staleBar" hidden></div>
     <section class="block"><div class="figures" id="figures"></div></section>
 
     <section class="block">
@@ -371,14 +384,49 @@ function migrate(loaded){
   const d=Object.assign({accounts:[],txns:[],recurring:[],settings:{}},loaded||{});
   d.settings=Object.assign({pointsPerDollar:1,centsPerPoint:0.7},d.settings);
   if(!d.accounts.length){
-    const ev={id:uid(),name:'Everyday',type:'everyday',balance:Number(loaded&&loaded.balance)||0};
+    const ev={id:uid(),name:'Everyday',type:'everyday',balance:Number(loaded&&loaded.balance)||0,asAt:iso(TODAY),asAtTs:0};
     d.accounts=[ev];
     d.txns.forEach(t=>{ if(!t.account) t.account=ev.id; });
     d.recurring.forEach(r=>{ if(!r.account) r.account=ev.id; });
   }
+  // every account is anchored to a date it was last known true
+  d.accounts.forEach(a=>{ if(!a.asAt) a.asAt=iso(TODAY); if(a.asAtTs==null) a.asAtTs=0; });
+  // older entries were all spending
+  d.txns.forEach(t=>{ if(!t.kind) t.kind='spend'; });
   delete d.balance;
   return d;
 }
+
+/* effect of one ledger entry on one account */
+function entryEffect(e,accId){
+  const a=acct(accId); if(!a) return 0;
+  const sign=a.type==='credit'?1:-1;      // spending: a card owes more, cash holds less
+  if(e.kind==='income')   return accId===e.account ? -sign*e.amount : 0;
+  if(e.kind==='transfer'){
+    if(accId===e.account) return sign*e.amount;
+    if(accId===e.to)      return -sign*e.amount;
+    return 0;
+  }
+  return accId===e.account ? sign*e.amount : 0;
+}
+
+/* does this entry land after the moment the balance was last set? */
+function afterAnchor(e,a){
+  const from=a.asAt||iso(TODAY);
+  if(e.date>from) return true;
+  if(e.date<from) return false;
+  return (e.at||0)>(a.asAtTs||0);   // same day: whichever was recorded later
+}
+
+/* balance = the figure you set, plus everything logged since */
+function balanceAt(accId,upto){
+  const a=acct(accId); if(!a) return 0;
+  return data.txns
+    .filter(e=>e.date<=upto&&afterAnchor(e,a))
+    .reduce((s,e)=>s+entryEffect(e,accId),Number(a.balance)||0);
+}
+const currentBalance=id=>balanceAt(id,iso(TODAY));
+const daysSince=d=>Math.round((TODAY-parseISO(d))/86400000);
 
 function stepDate(d,freq){
   if(freq==='weekly')return addDays(d,7);
@@ -397,7 +445,7 @@ const monthlyEquiv=i=>i.amount*PER_YEAR[i.freq]/12;
 
 function dailyVariableByAccount(){
   const from=addDays(TODAY,-60), out={};
-  const rows=data.txns.filter(t=>t.src!=='recurring'&&parseISO(t.date)>=from&&parseISO(t.date)<=TODAY);
+  const rows=data.txns.filter(t=>t.kind==='spend'&&t.src!=='recurring'&&parseISO(t.date)>=from&&parseISO(t.date)<=TODAY);
   if(!rows.length) return out;
   const first=rows.reduce((m,t)=>Math.min(m,parseISO(t.date).getTime()),Infinity);
   const days=Math.max(7,Math.round((TODAY-first)/86400000)+1);
@@ -420,13 +468,22 @@ function project(days){
   data.recurring.forEach(i=>occurrences(i,addDays(TODAY,1),end).forEach(d=>{
     const k=iso(d); (events[k]=events[k]||[]).push(i);
   }));
+  // anything already logged with a future date
+  const future={};
+  data.txns.filter(e=>e.date>iso(TODAY)&&e.date<=iso(end))
+    .forEach(e=>{ (future[e.date]=future[e.date]||[]).push(e); });
+  const applyEntry=(bal,e)=>data.accounts.forEach(a=>{
+    if(afterAnchor(e,a)) bal[a.id]=(bal[a.id]||0)+entryEffect(e,a.id);
+  });
+
   const perDay=includeVariable?dailyVariableByAccount():{};
-  const bal={}; data.accounts.forEach(a=>bal[a.id]=Number(a.balance)||0);
+  const bal={}; data.accounts.forEach(a=>bal[a.id]=currentBalance(a.id));
   const pts=[{date:new Date(TODAY),bal:Object.assign({},bal),events:[]}];
   const cards=data.accounts.filter(a=>a.type==='credit'&&Number(a.apr)>0);
 
   for(let n=1;n<=days;n++){
-    const d=addDays(TODAY,n), evs=events[iso(d)]||[];
+    const d=addDays(TODAY,n), key=iso(d), evs=events[key]||[];
+    (future[key]||[]).forEach(e=>applyEntry(bal,e));
     evs.forEach(i=>{
       if(i.kind==='income') applyReceive(bal,i.account,i.amount);
       else if(i.kind==='transfer'){ applySpend(bal,i.account,i.amount); applyReceive(bal,i.to,i.amount); }
@@ -439,7 +496,7 @@ function project(days){
   return {pts,perDay};
 }
 
-const sumOf=(type,b)=>accountsOf(type).reduce((s,a)=>s+(b?(b[a.id]||0):Number(a.balance)||0),0);
+const sumOf=(type,b)=>accountsOf(type).reduce((s,a)=>s+(b?(b[a.id]||0):currentBalance(a.id)),0);
 function seriesValue(b){
   if(view==='everyday') return sumOf('everyday',b);
   if(view==='credit')   return sumOf('credit',b);
@@ -523,7 +580,7 @@ function scrubFrom(clientX){
 }
 
 const cardInterestPerMonth=()=>accountsOf('credit')
-  .reduce((s,a)=>s+((Number(a.balance)||0)*((Number(a.apr)||0)/100/12)),0);
+  .reduce((s,a)=>s+(currentBalance(a.id)*((Number(a.apr)||0)/100/12)),0);
 function cardSpendPerMonth(){
   const per=dailyVariableByAccount();
   return accountsOf('credit').reduce((s,a)=>s+((per[a.id]||0)*30.44),0);
@@ -543,9 +600,10 @@ function renderFigures(){
   const lowIdx=ev.indexOf(Math.min(...ev)), low=ev[lowIdx];
   const nEveryday=accountsOf('everyday').length;
 
+  const oldest=data.accounts.length?Math.max(...data.accounts.map(a=>daysSince(a.asAt))):0;
   let html=`<div class="fig"><div class="k">Everyday</div>
       <div class="v${sumOf('everyday')<0?' bad':''}">${money2(sumOf('everyday'))}</div>
-      <div class="n">across ${nEveryday} account${nEveryday===1?'':'s'}</div></div>`;
+      <div class="n">${oldest===0?'balance set today':`balance set ${oldest} day${oldest===1?'':'s'} ago`}</div></div>`;
   if(accountsOf('credit').length){
     const int=cardInterestPerMonth();
     html+=`<div class="fig"><div class="k">Card owing</div><div class="v owe">${money2(sumOf('credit'))}</div>
@@ -558,6 +616,13 @@ function renderFigures(){
       <div class="v${low<0?' bad':low<500?' warn':''}">${money2(low)}</div>
       <div class="n">${lowIdx===0?'that\u2019s today':pts[lowIdx].date.toLocaleDateString('en-AU',{day:'numeric',month:'short'})}</div></div>`;
   $('figures').innerHTML=html;
+
+  const stale=data.accounts.filter(a=>daysSince(a.asAt)>21);
+  const bar=$('staleBar');
+  if(stale.length){
+    bar.hidden=false;
+    bar.innerHTML=`${stale.map(a=>esc(a.name)).join(' and ')} ${stale.length===1?'was':'were'} last set against your bank over three weeks ago. Small misses add up — worth checking. <button id="goRecon">Check now</button>`;
+  } else bar.hidden=true;
 }
 
 function limitBreach(){
@@ -630,7 +695,7 @@ function renderUpcoming(){
   }).join('');
 }
 
-const monthRows=d=>{const k=monthKey(d);return data.txns.filter(t=>t.date.slice(0,7)===k);};
+const monthRows=d=>{const k=monthKey(d);return data.txns.filter(t=>t.kind==='spend'&&t.date.slice(0,7)===k);};
 
 function renderBand(sumId,catId,d){
   const rows=monthRows(d), total=rows.reduce((s,t)=>s+t.amount,0);
@@ -707,22 +772,36 @@ function renderRecurring(){
 function renderAccounts(){
   const TYPE={everyday:'Everyday',savings:'Savings',credit:'Credit card'};
   if(!data.accounts.length){ $('acctList').innerHTML='<div class="empty">No accounts yet. Add your everyday account first.</div>'; return; }
-  let html=data.accounts.map(a=>`
+  let html=data.accounts.map(a=>{
+    const now=currentBalance(a.id), age=daysSince(a.asAt);
+    const since=data.txns.filter(e=>e.date<=iso(TODAY)&&afterAnchor(e,a)&&(e.account===a.id||e.to===a.id)).length;
+    const when=age===0?'today':age===1?'yesterday':parseISO(a.asAt).toLocaleDateString('en-AU',{day:'numeric',month:'short'});
+    return `
     <div class="acctcard">
       <div class="head" style="margin-bottom:2px">
         <div><strong>${esc(a.name)}</strong> <span class="meta">· ${TYPE[a.type]}</span></div>
         <button class="del" data-adel="${a.id}" aria-label="Delete account">&times;</button>
       </div>
-      <div class="settings">
-        <div><label>${a.type==='credit'?'Currently owing':'Balance'}</label>
-          <input type="number" step="0.01" data-af="balance" data-aid="${a.id}" value="${a.balance==null?0:a.balance}"></div>
-        ${a.type==='credit'?`
+      <div class="nowline">
+        <div><div class="k">${a.type==='credit'?'Owing now':'Balance now'}</div>
+          <div class="nowval${a.type==='credit'?' owe':(now<0?' bad':'')}">${money2(now)}</div></div>
+        <div class="meta${age>21?' staleflag':''}">Set to ${money2(Number(a.balance)||0)} on ${when}${since?`, ${since} entr${since===1?'y':'ies'} since`:''}</div>
+      </div>
+      <div class="override">
+        <label for="ov-${a.id}">If that's wrong, put the real figure in and start from today</label>
+        <div class="ovrow">
+          <input type="number" step="0.01" id="ov-${a.id}" data-ovin="${a.id}" placeholder="${a.type==='credit'?'Actual owing':'Actual balance'}">
+          <button class="mini" data-ov="${a.id}">Set as today's</button>
+        </div>
+      </div>
+      ${a.type==='credit'?`<div class="settings">
         <div><label>Interest rate % p.a.</label>
           <input type="number" step="0.01" data-af="apr" data-aid="${a.id}" value="${a.apr==null?'':a.apr}" placeholder="e.g. 19.99"></div>
         <div><label>Credit limit</label>
-          <input type="number" step="1" data-af="limit" data-aid="${a.id}" value="${a.limit==null?'':a.limit}" placeholder="e.g. 10000"></div>`:''}
-      </div>
-    </div>`).join('');
+          <input type="number" step="1" data-af="limit" data-aid="${a.id}" value="${a.limit==null?'':a.limit}" placeholder="e.g. 10000"></div>
+      </div>`:''}
+    </div>`;
+  }).join('');
   if(accountsOf('credit').length){
     html+=`<div class="acctcard"><strong>Rewards points</strong>
       <div class="settings">
@@ -812,7 +891,7 @@ $('entry').addEventListener('submit',async e=>{
   const amount=parseFloat($('amount').value);
   if(!(amount>0)){$('amount').focus();return;}
   if(!data.accounts.length){status('Add an account first, under Accounts.',5000);return;}
-  data.txns.push({id:uid(),amount:Math.round(amount*100)/100,category:$('category').value,
+  data.txns.push({id:uid(),at:Date.now(),kind:'spend',amount:Math.round(amount*100)/100,category:$('category').value,
     date:$('date').value,note:$('note').value.trim(),account:Number($('account').value),by:user?user.email:null});
   cursor=parseISO($('date').value);
   $('amount').value='';$('note').value='';$('amount').focus();
@@ -861,18 +940,11 @@ document.addEventListener('click',async e=>{
   const paid=e.target.closest('[data-paid]'), rdel=e.target.closest('[data-rdel]'), adel=e.target.closest('[data-adel]');
   if(paid){
     const i=data.recurring.find(x=>String(x.id)===paid.dataset.paid); if(!i)return;
-    const from=acct(i.account);
-    if(i.kind==='bill'){
-      data.txns.push({id:uid(),amount:i.amount,category:i.category||'Other',date:i.next,note:i.name,
-        src:'recurring',account:i.account,by:user?user.email:null});
-      if(from) from.balance=(Number(from.balance)||0)+(from.type==='credit'?i.amount:-i.amount);
-    }else if(i.kind==='income'){
-      if(from) from.balance=(Number(from.balance)||0)+(from.type==='credit'?-i.amount:i.amount);
-    }else{
-      const to=acct(i.to);
-      if(from) from.balance=(Number(from.balance)||0)+(from.type==='credit'?i.amount:-i.amount);
-      if(to)   to.balance=(Number(to.balance)||0)+(to.type==='credit'?-i.amount:i.amount);
-    }
+    const e={id:uid(),at:Date.now(),date:i.next,amount:i.amount,kind:i.kind==='bill'?'spend':i.kind,
+      category:i.kind==='bill'?(i.category||'Other'):null,note:i.name,
+      account:i.account,src:'recurring',by:user?user.email:null};
+    if(i.kind==='transfer') e.to=i.to;
+    data.txns.push(e);
     i.next=iso(stepDate(parseISO(i.next),i.freq));
     renderAll(); await persist();
   }
@@ -886,20 +958,44 @@ document.addEventListener('click',async e=>{
   }
 });
 
+document.addEventListener('click',async e=>{
+  const r=e.target.closest('[data-ov]');
+  if(r){
+    const a=acct(Number(r.dataset.ov)); if(!a)return;
+    const box=document.querySelector(`[data-ovin="${a.id}"]`);
+    const v=parseFloat(box&&box.value);
+    if(isNaN(v)){ if(box) box.focus(); status('Put the real figure in first.',4000); return; }
+    a.balance=Math.round(v*100)/100;
+    a.asAt=iso(TODAY);
+    a.asAtTs=Date.now();
+    renderAll(); await persist();
+    status(`${a.name} set to ${money2(a.balance)} as of today.`,5000);
+    return;
+  }
+  if(e.target.closest('#goRecon')){
+    document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.tab==='accounts')));
+    ['dash','spend','bills','accounts'].forEach(t=>$('tab-'+t).hidden=(t!=='accounts'));
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+});
+
 $('acctForm').addEventListener('submit',async e=>{
   e.preventDefault();
   const name=$('aName').value.trim(); if(!name)return;
-  data.accounts.push({id:uid(),name,type:$('aType').value,balance:parseFloat($('aBalance').value)||0});
+  data.accounts.push({id:uid(),name,type:$('aType').value,balance:parseFloat($('aBalance').value)||0,asAt:iso(TODAY),asAtTs:Date.now()});
   $('aName').value='';$('aBalance').value='';
   renderAll(); await persist();
 });
+
+$('acctList').addEventListener('change',()=>{ renderAll(); });
 
 let editTimer;
 $('acctList').addEventListener('input',e=>{
   const f=e.target.dataset.af;
   if(f){
     const a=acct(Number(e.target.dataset.aid)); if(!a)return;
-    a[f]=parseFloat(e.target.value)||0;
+    if(f==='asAt'){ if(!e.target.value)return; a.asAt=e.target.value; }
+    else a[f]=parseFloat(e.target.value)||0;
   }else if(e.target.id==='setPts') data.settings.pointsPerDollar=parseFloat(e.target.value)||0;
   else if(e.target.id==='setCpp') data.settings.centsPerPoint=parseFloat(e.target.value)||0;
   else return;
@@ -910,9 +1006,10 @@ $('acctList').addEventListener('input',e=>{
 $('export').addEventListener('click',()=>{
   const lines=[['Type','Date','Name / note','Category','Account','Amount','Frequency','Entered by']];
   [...data.txns].sort((a,b)=>a.date.localeCompare(b.date))
-    .forEach(t=>lines.push(['Spend',t.date,t.note,t.category,(acct(t.account)||{}).name||'',t.amount.toFixed(2),'',t.by||'']));
+    .forEach(t=>lines.push([t.kind==='spend'?'Spend':t.kind==='income'?'Income':'Transfer',t.date,t.note,t.category||'',(acct(t.account)||{}).name||'',t.amount.toFixed(2),'',t.by||'']));
   data.recurring.forEach(i=>lines.push([i.kind,i.next,i.name,i.category||'',(acct(i.account)||{}).name||'',i.amount.toFixed(2),FREQ[i.freq],'']));
-  data.accounts.forEach(a=>lines.push(['Account balance',iso(TODAY),a.name,a.type,'',(Number(a.balance)||0).toFixed(2),'','']));
+  data.accounts.forEach(a=>lines.push(['Reconciled balance',a.asAt,a.name,a.type,'',(Number(a.balance)||0).toFixed(2),'','']));
+  data.accounts.forEach(a=>lines.push(['Balance today',iso(TODAY),a.name,a.type,'',currentBalance(a.id).toFixed(2),'','']));
   const csv=lines.map(r=>r.map(v=>`"${String(v==null?'':v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   const a=document.createElement('a');a.href=url;a.download='household-finances.csv';a.click();URL.revokeObjectURL(url);
