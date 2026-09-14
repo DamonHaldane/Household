@@ -1,0 +1,14 @@
+// Paste your Supabase project details here, then save.
+//
+// Find both values in Supabase: Project Settings -> API
+//   url      = "Project URL"
+//   anonKey  = the "anon" / "public" key  (this one is safe to publish --
+//              it only works alongside the security rules in SETUP.md)
+//
+// Leave this file untouched and the site still works, but it saves to
+// whichever browser you're using and nothing is shared.
+
+window.SUPABASE_CONFIG = {
+  url: "https://YOUR-PROJECT.supabase.co",
+  anonKey: "YOUR-ANON-KEY"
+};
