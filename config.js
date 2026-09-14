@@ -9,6 +9,6 @@
 // whichever browser you're using and nothing is shared.
 
 window.SUPABASE_CONFIG = {
-  url: "https://supabase.com/dashboard/project/llrkrhbccqejrbthedln/settings/api-keys?showConnect=true",
+  url: "https://llrkrhbccqejrbthedln.supabase.co",
   anonKey: "sb_publishable_ydyw5i3UtSHGJXIeJ2dHtA_gbU_Ww8O"
 };
