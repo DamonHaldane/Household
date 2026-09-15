@@ -105,6 +105,13 @@
   .pausebar button{background:none;border:0;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer;padding:0;margin-left:auto}
   .row.clickable{cursor:pointer}
   .row.clickable:hover{background:var(--rule-soft)}
+  .filterbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .filterbar select,.filterbar input{width:auto;min-width:130px;flex:0 1 auto}
+  .filtered{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;background:var(--rule-soft);
+    border-radius:8px;padding:11px 14px;margin-bottom:12px}
+  .filtered .amt2{font-size:20px;font-weight:700;letter-spacing:-0.01em}
+  .dayhead{padding:10px 0 2px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;display:inline-block}
+  .dayhead:hover{color:var(--accent);text-decoration:underline}
   .chip{display:inline-flex;align-items:center;gap:6px;background:var(--rule-soft);border-radius:999px;padding:4px 6px 4px 13px;font-size:13px;margin-bottom:14px}
   .chip button{background:none;border:0;color:var(--ink-soft);cursor:pointer;font-size:15px;line-height:1;padding:1px 5px;border-radius:50%}
 
@@ -335,7 +342,14 @@
       <input type="text" id="note" class="wide" placeholder="What was it for?" aria-label="Note">
       <button type="submit" class="add" id="addBtn">Add spend</button>
     </form>
+    <div class="filterbar">
+      <select id="fAccount" aria-label="Filter by account"><option value="">All accounts</option></select>
+      <input type="date" id="fDay" aria-label="Filter by day">
+      <button class="mini" id="fToday">Today</button>
+      <button class="mini" id="fClear" hidden>Clear filters</button>
+    </div>
     <div id="filterChip"></div>
+    <div class="filtered" id="filterSum" hidden></div>
     <div class="head">
       <h2 style="margin:0">Transactions</h2>
       <div class="monthnav">
@@ -453,7 +467,7 @@ const firstName=e=>e?e.split('@')[0]:'';
 const uid=()=>Date.now()+Math.floor(Math.random()*1000);
 
 let cursor=new Date(), horizon=90, includeVariable=true, view='everyday';
-let chartGeom=null, catFilter=null, editingId=null;
+let chartGeom=null, catFilter=null, editingId=null, acctFilter=null, dayFilter=null;
 let showHistory=true, historyDays=180;
 const TODAY=parseISO(iso(new Date()));
 
@@ -620,6 +634,19 @@ function seriesValue(b){
   if(view==='savings')  return sumOf('savings',b);
   return data.accounts.reduce((s,a)=>s+(a.type==='credit'?-(b[a.id]||0):(b[a.id]||0)),0);
 }
+/* Does this event actually move the line you're looking at? A mortgage paid
+   from the everyday account has no business appearing on the card's line. */
+function eventInView(e){
+  const typeOf=id=>{const a=acct(id);return a?a.type:null;};
+  if(view==='net'){
+    // moving money between your own accounts doesn't change what you're worth
+    return e.kind!=='transfer';
+  }
+  if(typeOf(e.account)===view) return true;
+  if(e.to!=null&&typeOf(e.to)===view) return true;
+  return false;
+}
+
 const VIEW_LABEL={everyday:'Everyday accounts',credit:'Credit card owing',savings:'Savings',net:'Net position'};
 const VIEW_COLOUR={everyday:'#0F6B52',credit:'#6B4E7D',savings:'#3A7089',net:'#1B2A33'};
 
@@ -677,8 +704,10 @@ function drawChart(){
   });
 
   let marks='';
-  pts.forEach((p,i)=>(p.events||[]).forEach(e=>{
-    const c=e.kind==='income'?'var(--accent)':e.kind==='transfer'?'var(--ink-faint)':'var(--warn)';
+  pts.forEach((p,i)=>(p.events||[]).filter(eventInView).forEach(e=>{
+    // on the card view, a repayment lands as a drop and a charge as a rise
+    const paysDown = e.kind==='income' || (e.kind==='transfer'&&acct(e.to)&&acct(e.to).type===view);
+    const c=paysDown?'var(--accent)':e.kind==='transfer'?'var(--ink-faint)':'var(--warn)';
     marks+=`<circle cx="${x(i).toFixed(1)}" cy="${y(vals[i]).toFixed(1)}" r="3" fill="${c}" stroke="var(--paper)" stroke-width="1.5"><title>${esc(e.name)} · ${money2(e.amount)}</title></circle>`;
   }));
 
@@ -728,7 +757,11 @@ function showScrub(i){
   g.innerHTML=`<line x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${T}" y2="${H-B}" stroke="var(--ink-faint)" stroke-width="1"/>
     <circle cx="${x(i).toFixed(1)}" cy="${y(vals[i]).toFixed(1)}" r="4.5" fill="var(--paper)" stroke="${VIEW_COLOUR[view]}" stroke-width="2"/>`;
   const when=p.date.toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'});
-  const evs=(p.events||[]).map(e=>`<span class="hit">${esc(e.name)} ${e.kind==='income'?'+':'−'}${money2(e.amount)}</span>`).join(' ');
+  const evs=(p.events||[]).filter(eventInView).map(e=>{
+    const down = e.kind==='income' || (e.kind==='transfer'&&acct(e.to)&&acct(e.to).type===view);
+    const sign = view==='credit' ? (down?'−':'+') : (down?'+':'−');
+    return `<span class="hit">${esc(e.name)} ${sign}${money2(e.amount)}</span>`;
+  }).join(' ');
   const tag=p.past?'<span style="color:var(--ink-faint)">actual</span>':'';
   $('scrub').innerHTML=`<span>${when}</span><b${vals[i]<0?' style="color:var(--bad)"':''}>${money2(vals[i])}</b>${tag}${evs}`;
 }
@@ -931,10 +964,42 @@ function renderSpend(){
   $('monthLabel').textContent=monthName(cursor);
   let rows=monthAll(cursor).sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
   renderBand('spendSummary','list',cursor);
-  $('filterChip').innerHTML=catFilter
-    ? `<span class="chip"><span class="dot" style="background:${COLOUR[catFilter]||'#9AA3A8'}"></span>${esc(catFilter)} only <button id="clearFilter" aria-label="Show all">&times;</button></span>`:'';
-  if(catFilter) rows=rows.filter(t=>t.kind==='spend'&&t.category===catFilter);
-  if(!rows.length){ $('list').innerHTML=catFilter?`<div class="empty" style="border-top:0">Nothing in ${esc(catFilter)} for ${monthName(cursor)}.</div>`:''; return; }
+  // chips for whatever is currently narrowing the list
+  const chips=[];
+  if(catFilter) chips.push(`<span class="chip"><span class="dot" style="background:${COLOUR[catFilter]||'#9AA3A8'}"></span>${esc(catFilter)} <button data-clear="cat" aria-label="Clear category">&times;</button></span>`);
+  if(acctFilter!=null) chips.push(`<span class="chip">${esc((acct(acctFilter)||{}).name||'Account')} <button data-clear="acct" aria-label="Clear account">&times;</button></span>`);
+  if(dayFilter) chips.push(`<span class="chip">${parseISO(dayFilter).toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})} <button data-clear="day" aria-label="Clear day">&times;</button></span>`);
+  $('filterChip').innerHTML=chips.join(' ');
+  $('fClear').hidden=!chips.length;
+  $('fAccount').value=acctFilter==null?'':String(acctFilter);
+  $('fDay').value=dayFilter||'';
+
+  if(catFilter)     rows=rows.filter(t=>t.kind==='spend'&&t.category===catFilter);
+  if(acctFilter!=null) rows=rows.filter(t=>t.account===acctFilter||t.to===acctFilter);
+  if(dayFilter)     rows=rows.filter(t=>t.date===dayFilter);
+
+  // a subtotal for exactly what's on screen
+  const fSpend=rows.filter(t=>t.kind==='spend').reduce((s,t)=>s+t.amount,0);
+  const fIncome=rows.filter(t=>t.kind==='income').reduce((s,t)=>s+t.amount,0);
+  const filtered=chips.length>0;
+  $('filterSum').hidden=!filtered;
+  if(filtered){
+    const bits=[];
+    if(fSpend>0)  bits.push(`<span class="amt2">${money2(fSpend)}</span> spent`);
+    if(fIncome>0) bits.push(`<span class="amt2 in">${money2(fIncome)}</span> in`);
+    const what=[
+      acctFilter!=null?esc((acct(acctFilter)||{}).name||''):null,
+      dayFilter?'on '+parseISO(dayFilter).toLocaleDateString('en-AU',{day:'numeric',month:'long'}):null,
+      catFilter?'· '+esc(catFilter):null
+    ].filter(Boolean).join(' ');
+    $('filterSum').innerHTML=(bits.join(' · ')||'<span class="meta">Nothing matches</span>')+
+      ` <span class="meta">${rows.length} ${rows.length===1?'entry':'entries'}${what?' — '+what:''}</span>`;
+  }
+  if(!rows.length){
+    $('list').innerHTML=(catFilter||acctFilter!=null||dayFilter)
+      ? `<div class="empty" style="border-top:0">Nothing matches those filters in ${monthName(cursor)}.</div>` : '';
+    return;
+  }
   const inc=rows.filter(t=>t.kind==='income').reduce((s,t)=>s+t.amount,0);
   if(inc>0) $('spendSummary').insertAdjacentHTML('beforeend',
     `<div class="meta" style="margin-top:8px">Plus ${money2(inc)} received this month.</div>`);
@@ -942,7 +1007,8 @@ function renderSpend(){
   rows.forEach(t=>{let g=days.find(x=>x.date===t.date);if(!g){g={date:t.date,items:[]};days.push(g);}g.items.push(t);});
   $('list').innerHTML=days.map(g=>{
     const label=parseISO(g.date).toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'});
-    return `<div style="padding:10px 0 2px;font-size:12.5px;color:var(--ink-soft)">${label}</div>`+
+    const dayTotal=g.items.filter(t=>t.kind==='spend').reduce((s,t)=>s+t.amount,0);
+    return `<div class="dayhead" data-day="${g.date}" title="Show only this day">${label}${dayTotal>0?` · ${money2(dayTotal)}`:''}</div>`+
       g.items.map(t=>{
         const inc=t.kind==='income', tr=t.kind==='transfer';
         const c=inc?'var(--accent)':tr?'var(--ink-faint)':(COLOUR[t.category]||'#9AA3A8');
@@ -1085,6 +1151,11 @@ function fillAccountSelects(){
   set($('rFrom'),defaultCashAccount());
   set($('rTo'),accountsOf('credit')[0]||accountsOf('savings')[0]||data.accounts[0],'into ');
   set($('eTo'),accountsOf('savings')[0]||accountsOf('credit')[0]||data.accounts[0],'into ');
+
+  const fa=$('fAccount'), keep=fa.value;
+  fa.innerHTML='<option value="">All accounts</option>'+
+    data.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
+  fa.value=data.accounts.some(a=>String(a.id)===keep)?keep:'';
 }
 
 function updateRecHint(){
@@ -1161,17 +1232,46 @@ chart.addEventListener('pointermove',e=>{if(scrubbing||e.pointerType==='mouse')s
 chart.addEventListener('pointerup',()=>{scrubbing=false;});
 chart.addEventListener('pointerleave',()=>{if(!scrubbing)showScrub(null);});
 
-$('prev').addEventListener('click',()=>{cursor=new Date(cursor.getFullYear(),cursor.getMonth()-1,1);renderSpend();});
-$('next').addEventListener('click',()=>{cursor=new Date(cursor.getFullYear(),cursor.getMonth()+1,1);renderSpend();});
+$('prev').addEventListener('click',()=>{cursor=new Date(cursor.getFullYear(),cursor.getMonth()-1,1);dayFilter=null;renderSpend();});
+$('next').addEventListener('click',()=>{cursor=new Date(cursor.getFullYear(),cursor.getMonth()+1,1);dayFilter=null;renderSpend();});
 
 $('dashCats').addEventListener('click',e=>{
   const r=e.target.closest('[data-cat]'); if(!r)return;
-  catFilter=r.dataset.cat;
+  catFilter=r.dataset.cat; dayFilter=null; acctFilter=null;
   document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.tab==='spend')));
   ['dash','spend','bills','accounts'].forEach(t=>$('tab-'+t).hidden=(t!=='spend'));
   renderSpend(); window.scrollTo({top:0,behavior:'smooth'});
 });
-$('filterChip').addEventListener('click',e=>{ if(e.target.closest('#clearFilter')){catFilter=null;renderSpend();} });
+$('filterChip').addEventListener('click',e=>{
+  const b=e.target.closest('[data-clear]'); if(!b)return;
+  if(b.dataset.clear==='cat') catFilter=null;
+  if(b.dataset.clear==='acct') acctFilter=null;
+  if(b.dataset.clear==='day') dayFilter=null;
+  renderSpend();
+});
+
+$('fAccount').addEventListener('change',e=>{
+  acctFilter = e.target.value===''?null:Number(e.target.value);
+  renderSpend();
+});
+$('fDay').addEventListener('change',e=>{
+  dayFilter = e.target.value||null;
+  if(dayFilter) cursor=parseISO(dayFilter);   // jump to the right month
+  renderSpend();
+});
+$('fToday').addEventListener('click',()=>{
+  dayFilter=iso(TODAY); cursor=new Date(TODAY); renderSpend();
+});
+$('fClear').addEventListener('click',()=>{
+  catFilter=null; acctFilter=null; dayFilter=null; renderSpend();
+});
+
+/* clicking a day heading isolates that day */
+$('list').addEventListener('click',e=>{
+  const d=e.target.closest('[data-day]'); if(!d)return;
+  dayFilter = dayFilter===d.dataset.day ? null : d.dataset.day;
+  renderSpend();
+});
 
 $('entry').addEventListener('submit',async e=>{
   e.preventDefault();
