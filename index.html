@@ -736,6 +736,27 @@ function limitBreach(){
   return null;
 }
 
+async function applyOverride(id){
+  const a=acct(Number(id)); if(!a) return;
+  const box=document.querySelector(`[data-ovin="${id}"]`);
+  // prefer whatever is still in the box; fall back to the value caught on pointerdown
+  let raw = box && box.value!=='' ? box.value
+          : (pendingOverride && pendingOverride.id===String(id) ? pendingOverride.value : '');
+  pendingOverride=null;
+  const v=parseFloat(raw);
+  if(isNaN(v)){
+    if(box) box.focus();
+    status('Type the figure from your bank first.',4000);
+    return;
+  }
+  a.balance=Math.round(v*100)/100;
+  a.asAt=iso(TODAY);
+  a.asAtTs=Date.now();
+  renderAll();
+  await persist();
+  status(`${a.name} set to ${money2(a.balance)} as of today.`,5000);
+}
+
 function renderPauseBar(){
   const bar=$('pauseBar');
   const off=data.recurring.filter(isPaused);
@@ -1192,18 +1213,7 @@ document.addEventListener('click',async e=>{
 
 document.addEventListener('click',async e=>{
   const r=e.target.closest('[data-ov]');
-  if(r){
-    const a=acct(Number(r.dataset.ov)); if(!a)return;
-    const box=document.querySelector(`[data-ovin="${a.id}"]`);
-    const v=parseFloat(box&&box.value);
-    if(isNaN(v)){ if(box) box.focus(); status('Put the real figure in first.',4000); return; }
-    a.balance=Math.round(v*100)/100;
-    a.asAt=iso(TODAY);
-    a.asAtTs=Date.now();
-    renderAll(); await persist();
-    status(`${a.name} set to ${money2(a.balance)} as of today.`,5000);
-    return;
-  }
+  if(r){ applyOverride(r.dataset.ov); return; }
   if(e.target.closest('#resumeAll')){
     data.recurring.forEach(i=>delete i.paused);
     renderAll(); persist();
@@ -1225,7 +1235,32 @@ $('acctForm').addEventListener('submit',async e=>{
   renderAll(); await persist();
 });
 
-$('acctList').addEventListener('change',()=>{ renderAll(); });
+let pendingOverride=null;
+
+/* Capture the typed figure on pointerdown: by the time the click lands the
+   input has already blurred, and a re-render can replace the button. */
+$('acctList').addEventListener('pointerdown',e=>{
+  const b=e.target.closest('[data-ov]');
+  if(!b) return;
+  const box=document.querySelector(`[data-ovin="${b.dataset.ov}"]`);
+  pendingOverride = box ? {id:b.dataset.ov, value:box.value} : null;
+});
+
+/* Enter in the override box does the same as pressing the button */
+$('acctList').addEventListener('keydown',e=>{
+  if(e.key!=='Enter') return;
+  const box=e.target.closest('[data-ovin]');
+  if(!box) return;
+  e.preventDefault();
+  pendingOverride={id:box.dataset.ovin, value:box.value};
+  applyOverride(box.dataset.ovin);
+});
+
+$('acctList').addEventListener('change',e=>{
+  // the override box manages itself — re-rendering here would wipe what was typed
+  if(e.target.closest('[data-ovin]')) return;
+  renderAll();
+});
 
 let editTimer;
 $('acctList').addEventListener('input',e=>{
