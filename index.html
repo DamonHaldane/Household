@@ -105,6 +105,29 @@
   .pausebar button{background:none;border:0;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer;padding:0;margin-left:auto}
   .row.clickable{cursor:pointer}
   .row.clickable:hover{background:var(--rule-soft)}
+  .cyclehead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+  .targetset label{display:block;font-size:12.5px;color:var(--ink-soft);margin-bottom:4px}
+  .targetset input{width:120px}
+  .cyclefigs{display:flex;flex-wrap:wrap;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-bottom:20px}
+  .cyclefig{flex:1 1 150px;padding:14px 18px 14px 0;margin-right:18px;border-right:1px solid var(--rule)}
+  .cyclefig:last-child{border-right:0;margin-right:0}
+  .cyclefig .k{font-size:12.5px;color:var(--ink-soft);margin-bottom:3px}
+  .cyclefig .v{font-size:24px;font-weight:700;letter-spacing:-0.02em;line-height:1.1}
+  .cyclefig .n{font-size:12.5px;color:var(--ink-faint);margin-top:2px}
+  .v.good{color:var(--accent)} .v.over{color:var(--bad)} .v.watch{color:var(--warn)}
+  .verdictbig{padding:16px 18px;border-radius:10px;font-size:14.5px;line-height:1.55;margin-bottom:24px}
+  .verdictbig.good{background:#ECF3F0;border:1px solid #CFE0D8;color:#1F5244}
+  .verdictbig.bad{background:#FBEFEC;border:1px solid #EDCFC7;color:#7C3A2C}
+  .verdictbig strong{font-weight:700}
+  .daybars{display:flex;align-items:flex-end;gap:3px;height:130px;margin:6px 0 4px}
+  .daycol{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;position:relative;min-width:0}
+  .daycol .b{width:100%;border-radius:2px 2px 0 0;background:var(--accent);min-height:2px}
+  .daycol.over .b{background:var(--warn)}
+  .daycol.future .b{background:var(--rule)}
+  .daycol.today .b{outline:2px solid var(--ink);outline-offset:1px}
+  .daylabels{display:flex;gap:3px;font-size:10px;color:var(--ink-faint)}
+  .daylabels span{flex:1;text-align:center;min-width:0;overflow:hidden}
+  .cyclehist{border-top:1px solid var(--rule)}
   .filterbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
   .filterbar select,.filterbar input{width:auto;min-width:130px;flex:0 1 auto}
   .filtered{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;background:var(--rule-soft);
@@ -266,6 +289,7 @@
       <button role="tab" data-tab="dash" aria-selected="true">Dashboard</button>
       <button role="tab" data-tab="spend" aria-selected="false">Spending</button>
       <button role="tab" data-tab="bills" aria-selected="false">Bills &amp; income</button>
+      <button role="tab" data-tab="cycle" aria-selected="false">Card cycle</button>
       <button role="tab" data-tab="accounts" aria-selected="false">Accounts</button>
     </nav>
   </header>
@@ -394,6 +418,20 @@
     </section>
   </div>
 
+  <div id="tab-cycle" hidden>
+    <div class="cyclehead">
+      <div>
+        <h2 style="margin:0 0 2px" id="cycleTitle">This payment cycle</h2>
+        <div class="meta" id="cycleDates"></div>
+      </div>
+      <div class="targetset">
+        <label for="dailyTarget">Daily target</label>
+        <input type="number" id="dailyTarget" step="10" min="0" aria-label="Daily spending target">
+      </div>
+    </div>
+    <div id="cycleBody"></div>
+  </div>
+
   <div id="tab-accounts" hidden>
     <form class="entry acct" id="acctForm" autocomplete="off">
       <input type="text" id="aName" placeholder="Account name" aria-label="Account name" required>
@@ -482,7 +520,7 @@ const defaultCashAccount=()=>accountsOf('everyday')[0]||data.accounts[0];
 function migrate(loaded){
   const d=Object.assign({accounts:[],txns:[],recurring:[],history:[],settings:{}},loaded||{});
   if(!Array.isArray(d.history)) d.history=[];
-  d.settings=Object.assign({pointsPerDollar:1,centsPerPoint:0.7},d.settings);
+  d.settings=Object.assign({pointsPerDollar:1,centsPerPoint:0.7,dailyTarget:200},d.settings);
   if(!d.accounts.length){
     const ev={id:uid(),name:'Everyday',type:'everyday',balance:Number(loaded&&loaded.balance)||0,asAt:iso(TODAY),asAtTs:0};
     d.accounts=[ev];
@@ -848,6 +886,140 @@ async function applyOverride(id){
   status(`${a.name} set to ${money2(a.balance)} as of today.`,5000);
 }
 
+/* ===================== card payment cycle ===================== */
+
+function prevDate(d,freq){
+  if(freq==='weekly')return addDays(d,-7);
+  if(freq==='fortnightly')return addDays(d,-14);
+  if(freq==='quarterly')return addMonths(d,-3);
+  if(freq==='yearly')return addMonths(d,-12);
+  return addMonths(d,-1);
+}
+
+/* the scheduled transfer that pays the card — this defines the cycle */
+function cardRepayment(){
+  return data.recurring.find(i=>i.kind==='transfer'&&acct(i.to)&&acct(i.to).type==='credit');
+}
+
+/* offset 0 = the cycle we're in, -1 = the one before, and so on */
+function cycleBounds(offset){
+  const rp=cardRepayment();
+  const freq=rp?rp.freq:'fortnightly';
+  let start;
+  if(rp){
+    start=parseISO(rp.next);
+    let g=0;
+    while(start>TODAY&&g++<400) start=prevDate(start,freq);
+  }else{
+    start=addDays(TODAY,-13);
+  }
+  for(let n=0;n<Math.abs(offset||0);n++) start=(offset<0?prevDate:stepDate)(start,freq);
+  const end=addDays(stepDate(start,freq),-1);
+  return {start,end,freq,repayment:rp?rp.amount:0,
+          days:Math.round((end-start)/86400000)+1};
+}
+
+const cardIds=()=>accountsOf('credit').map(a=>a.id);
+
+function cardSpendBetween(from,to){
+  const ids=cardIds(), a=iso(from), b=iso(to);
+  return data.txns.filter(t=>t.kind==='spend'&&ids.includes(t.account)&&t.date>=a&&t.date<=b);
+}
+
+function cycleInterest(days){
+  return accountsOf('credit').reduce((s,a)=>
+    s+(currentBalance(a.id)*((Number(a.apr)||0)/100/365)*days),0);
+}
+
+function renderCycle(){
+  const target=Number(data.settings.dailyTarget)||0;
+  const C=cycleBounds(0);
+  const rows=cardSpendBetween(C.start,C.end);
+  const spent=rows.reduce((s,t)=>s+t.amount,0);
+  const elapsed=Math.min(C.days,Math.max(1,Math.round((TODAY-C.start)/86400000)+1));
+  const remaining=Math.max(0,C.days-elapsed);
+  const pace=spent/elapsed;
+  const projected=spent+remaining*(pace||target);
+  const budget=target*C.days;
+  const interest=cycleInterest(C.days);
+  const net=projected+interest-C.repayment;   // + means the balance grows
+
+  $('cycleDates').textContent=
+    `${C.start.toLocaleDateString('en-AU',{day:'numeric',month:'short'})} – ${C.end.toLocaleDateString('en-AU',{day:'numeric',month:'short'})}`+
+    ` · day ${elapsed} of ${C.days}`+(C.repayment?` · ${money2(C.repayment)} repayment`:'');
+
+  /* ---- figures ---- */
+  const aheadBy=target?(target*elapsed-spent):0;
+  let html=`<div class="cyclefigs">
+    <div class="cyclefig"><div class="k">Spent so far</div>
+      <div class="v">${money2(spent)}</div>
+      <div class="n">${money2(pace)} a day</div></div>
+    ${target?`<div class="cyclefig"><div class="k">Against target</div>
+      <div class="v ${aheadBy>=0?'good':'over'}">${aheadBy>=0?'−':'+'}${money2(Math.abs(aheadBy))}</div>
+      <div class="n">${aheadBy>=0?'under':'over'} by day ${elapsed}</div></div>`:''}
+    <div class="cyclefig"><div class="k">Projected by ${C.end.toLocaleDateString('en-AU',{day:'numeric',month:'short'})}</div>
+      <div class="v ${target&&projected>budget?'watch':''}">${money2(projected)}</div>
+      <div class="n">${target?`target ${money2(budget)}`:'at current pace'}</div></div>
+    ${C.repayment?`<div class="cyclefig"><div class="k">Balance this cycle</div>
+      <div class="v ${net>0?'over':'good'}">${net>0?'+':'−'}${money2(Math.abs(net))}</div>
+      <div class="n">${net>0?'growing':'shrinking'}</div></div>`:''}
+  </div>`;
+
+  /* ---- the verdict ---- */
+  if(C.repayment){
+    html+= net>0
+      ? `<div class="verdictbig bad">On this pace you'll put <strong>${money2(projected)}</strong> on the card this cycle. Add ${money2(interest)} of interest, against a ${money2(C.repayment)} repayment — the balance <strong>grows by ${money2(net)}</strong>.
+         To break even you'd need to hold spending to ${money2(Math.max(0,C.repayment-interest))} across the ${C.days} days, or ${money2(Math.max(0,(C.repayment-interest)/C.days))} a day.</div>`
+      : `<div class="verdictbig good">On this pace you'll put <strong>${money2(projected)}</strong> on the card, plus ${money2(interest)} interest, against a ${money2(C.repayment)} repayment — the balance <strong>falls by ${money2(-net)}</strong> this cycle.
+         Keep that up and it clears steadily.</div>`;
+  }else{
+    html+=`<div class="verdictbig bad">No card repayment scheduled, so there's nothing to measure against. Add it under Bills &amp; income as a Transfer into the card.</div>`;
+  }
+
+  /* ---- daily bars ---- */
+  const byDay={};
+  rows.forEach(t=>byDay[t.date]=(byDay[t.date]||0)+t.amount);
+  const maxDay=Math.max(target||0,...Object.values(byDay),1);
+  let bars='',labels='';
+  for(let n=0;n<C.days;n++){
+    const d=addDays(C.start,n), k=iso(d), v=byDay[k]||0;
+    const future=d>TODAY, isToday=k===iso(TODAY);
+    const cls=[future?'future':'',target&&v>target?'over':'',isToday?'today':''].filter(Boolean).join(' ');
+    bars+=`<div class="daycol ${cls}" title="${d.toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})}: ${money2(v)}">
+      <span class="b" style="height:${Math.max(2,(v/maxDay)*100)}%"></span></div>`;
+    labels+=`<span>${d.getDate()}</span>`;
+  }
+  html+=`<h2>Day by day</h2>
+    ${target?`<div class="meta" style="margin-bottom:4px">Amber bars are days over the ${money2(target)} target.</div>`:''}
+    <div class="daybars">${bars}</div><div class="daylabels">${labels}</div>`;
+
+  /* ---- previous cycles ---- */
+  const hist=[];
+  for(let o=-1;o>=-6;o--){
+    const P=cycleBounds(o);
+    if(P.end<parseISO('2020-01-01')) break;
+    const r=cardSpendBetween(P.start,P.end);
+    if(!r.length&&o<-2) continue;
+    const sp=r.reduce((s,t)=>s+t.amount,0);
+    hist.push({P,sp,n:r.length});
+  }
+  if(hist.length){
+    html+=`<h2 style="margin-top:30px">Previous cycles</h2><div class="cyclehist">`+
+      hist.map(({P,sp,n})=>{
+        const over=C.repayment?sp-C.repayment:0;
+        return `<div class="row"><span class="grow">
+          <span class="clip">${P.start.toLocaleDateString('en-AU',{day:'numeric',month:'short'})} – ${P.end.toLocaleDateString('en-AU',{day:'numeric',month:'short'})}</span>
+          <div class="meta">${n} purchase${n===1?'':'s'} · ${money2(sp/P.days)} a day</div></span>
+          ${C.repayment?`<span class="due ${over>0?'over':''}">${over>0?'+':'−'}${money2(Math.abs(over))}</span>`:''}
+          <span class="amt" style="width:96px">${money2(sp)}</span></div>`;
+      }).join('')+`</div>
+      <div class="meta" style="margin-top:8px">Right-hand figure is spending against the ${money2(C.repayment)} repayment — a plus means the balance grew that cycle.</div>`;
+  }
+
+  $('cycleBody').innerHTML=html;
+  $('dailyTarget').value=target||'';
+}
+
 function renderPauseBar(){
   const bar=$('pauseBar');
   const off=data.recurring.filter(isPaused);
@@ -1173,7 +1345,7 @@ function renderAll(){
   drawChart(); renderFigures(); renderPauseBar(); renderCard(); renderUpcoming();
   renderBand('dashSummary','dashCats',new Date());
   $('monthMeta').textContent=monthName(new Date());
-  renderTrend(); renderSpend(); renderRecurring(); renderAccounts();
+  renderTrend(); renderSpend(); renderRecurring(); renderCycle(); renderAccounts();
   updateRecHint();
 }
 
@@ -1185,7 +1357,7 @@ updateEntryForm();
 
 document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x===b)));
-  ['dash','spend','bills','accounts'].forEach(t=>$('tab-'+t).hidden=(t!==b.dataset.tab));
+  ['dash','spend','bills','cycle','accounts'].forEach(t=>$('tab-'+t).hidden=(t!==b.dataset.tab));
 }));
 
 $('viewSeg').addEventListener('click',e=>{
@@ -1239,7 +1411,7 @@ $('dashCats').addEventListener('click',e=>{
   const r=e.target.closest('[data-cat]'); if(!r)return;
   catFilter=r.dataset.cat; dayFilter=null; acctFilter=null;
   document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.tab==='spend')));
-  ['dash','spend','bills','accounts'].forEach(t=>$('tab-'+t).hidden=(t!=='spend'));
+  ['dash','spend','bills','cycle','accounts'].forEach(t=>$('tab-'+t).hidden=(t!=='spend'));
   renderSpend(); window.scrollTo({top:0,behavior:'smooth'});
 });
 $('filterChip').addEventListener('click',e=>{
@@ -1320,6 +1492,13 @@ function updateEntryForm(){
   $('note').placeholder = k==='income'?'Where from? (e.g. tax refund)'
     : k==='transfer'?'What for?' : 'What was it for?';
 }
+let targetTimer;
+$('dailyTarget').addEventListener('input',e=>{
+  data.settings.dailyTarget=parseFloat(e.target.value)||0;
+  renderCycle();
+  clearTimeout(targetTimer); targetTimer=setTimeout(persist,900);
+});
+
 $('eKind').addEventListener('change',()=>{
   updateEntryForm();
   const k=$('eKind').value;
@@ -1432,7 +1611,7 @@ document.addEventListener('click',async e=>{
   }
   if(e.target.closest('#goRecon')){
     document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.tab==='accounts')));
-    ['dash','spend','bills','accounts'].forEach(t=>$('tab-'+t).hidden=(t!=='accounts'));
+    ['dash','spend','bills','cycle','accounts'].forEach(t=>$('tab-'+t).hidden=(t!=='accounts'));
     window.scrollTo({top:0,behavior:'smooth'});
   }
 });
