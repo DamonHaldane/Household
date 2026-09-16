@@ -105,6 +105,21 @@
   .pausebar button{background:none;border:0;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer;padding:0;margin-left:auto}
   .row.clickable{cursor:pointer}
   .row.clickable:hover{background:var(--rule-soft)}
+  .cyclenav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px}
+  .cyclenav button{background:none;border:1px solid var(--rule);color:var(--ink-soft);
+    width:28px;height:28px;border-radius:var(--radius);cursor:pointer;font-size:14px;line-height:1;flex:0 0 auto}
+  .cyclenav button:hover{border-color:var(--ink-soft);color:var(--ink)}
+  .cyclenav button.mini{width:auto;height:auto}
+  .daycol{cursor:pointer}
+  .daycol:hover .b{filter:brightness(1.12)}
+  .daycol.picked .b{outline:2px solid var(--ink);outline-offset:1px}
+  .daydetail{background:var(--rule-soft);border-radius:8px;padding:14px 16px;margin:14px 0 4px}
+  .daydetail .head{margin-bottom:8px}
+  .daydetail .row{border-bottom:1px solid rgba(27,42,51,.08)}
+  .daydetail .row:last-child{border-bottom:0}
+  .bigday{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--rule);cursor:pointer}
+  .bigday:hover{background:var(--rule-soft)}
+  .bigday .rank{width:20px;color:var(--ink-faint);font-size:12.5px}
   .cyclehead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px}
   .targetset label{display:block;font-size:12.5px;color:var(--ink-soft);margin-bottom:4px}
   .targetset input{width:120px}
@@ -421,7 +436,12 @@
   <div id="tab-cycle" hidden>
     <div class="cyclehead">
       <div>
-        <h2 style="margin:0 0 2px" id="cycleTitle">This payment cycle</h2>
+        <div class="cyclenav">
+          <button id="cyclePrev" aria-label="Previous cycle">&#8249;</button>
+          <h2 style="margin:0" id="cycleTitle">This payment cycle</h2>
+          <button id="cycleNext" aria-label="Next cycle">&#8250;</button>
+          <button class="mini" id="cycleNow" hidden>Back to now</button>
+        </div>
         <div class="meta" id="cycleDates"></div>
       </div>
       <div class="targetset">
@@ -507,6 +527,7 @@ const uid=()=>Date.now()+Math.floor(Math.random()*1000);
 let cursor=new Date(), horizon=90, includeVariable=true, view='everyday';
 let chartGeom=null, catFilter=null, editingId=null, acctFilter=null, dayFilter=null;
 let showHistory=true, historyDays=180;
+let cycleOffset=0, pickedDay=null;
 const TODAY=parseISO(iso(new Date()));
 
 function status(m,ms=2200){$('status').textContent=m;if(ms)setTimeout(()=>{if($('status').textContent===m)$('status').textContent='';},ms);}
@@ -926,72 +947,135 @@ function cardSpendBetween(from,to){
   return data.txns.filter(t=>t.kind==='spend'&&ids.includes(t.account)&&t.date>=a&&t.date<=b);
 }
 
-function cycleInterest(days){
-  return accountsOf('credit').reduce((s,a)=>
-    s+(currentBalance(a.id)*((Number(a.apr)||0)/100/365)*days),0);
+/* average card balance over a window, taken from the daily snapshots so a
+   past cycle isn't costed at today's balance */
+function avgCardBalance(from,to){
+  const ids=cardIds(); if(!ids.length) return 0;
+  const a=iso(from), b=iso(to);
+  const rows=(data.history||[]).filter(h=>h.date>=a&&h.date<=b);
+  if(rows.length){
+    const tot=rows.reduce((s,h)=>s+ids.reduce((t,id)=>t+(h.acc[id]||0),0),0);
+    return tot/rows.length;
+  }
+  return ids.reduce((s,id)=>s+currentBalance(id),0);   // nothing recorded yet
+}
+
+function cycleInterest(from,to,days){
+  const bal=avgCardBalance(from,to);
+  const apr=accountsOf('credit').reduce((s,a)=>Math.max(s,Number(a.apr)||0),0);
+  return bal*(apr/100/365)*days;
 }
 
 function renderCycle(){
   const target=Number(data.settings.dailyTarget)||0;
-  const C=cycleBounds(0);
+  const C=cycleBounds(cycleOffset);
   const rows=cardSpendBetween(C.start,C.end);
   const spent=rows.reduce((s,t)=>s+t.amount,0);
-  const elapsed=Math.min(C.days,Math.max(1,Math.round((TODAY-C.start)/86400000)+1));
+
+  const isPast=C.end<TODAY, isFuture=C.start>TODAY, isNow=!isPast&&!isFuture;
+  const elapsed=isNow?Math.min(C.days,Math.max(1,Math.round((TODAY-C.start)/86400000)+1))
+                : isPast?C.days:0;
   const remaining=Math.max(0,C.days-elapsed);
-  const pace=spent/elapsed;
-  const projected=spent+remaining*(pace||target);
+  const pace=elapsed?spent/elapsed:0;
+  const projected=isPast?spent
+                 : isFuture?target*C.days
+                 : spent+remaining*(pace||target);
   const budget=target*C.days;
-  const interest=cycleInterest(C.days);
+  const interest=cycleInterest(C.start,C.end,C.days);
   const net=projected+interest-C.repayment;   // + means the balance grows
 
+  $('cycleTitle').textContent = isNow?'This payment cycle'
+    : isPast?`${Math.abs(cycleOffset)} cycle${Math.abs(cycleOffset)===1?'':'s'} ago` : 'Upcoming cycle';
+  $('cycleNow').hidden = cycleOffset===0;
   $('cycleDates').textContent=
-    `${C.start.toLocaleDateString('en-AU',{day:'numeric',month:'short'})} – ${C.end.toLocaleDateString('en-AU',{day:'numeric',month:'short'})}`+
-    ` · day ${elapsed} of ${C.days}`+(C.repayment?` · ${money2(C.repayment)} repayment`:'');
+    `${C.start.toLocaleDateString('en-AU',{day:'numeric',month:'short'})} – ${C.end.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'})}`+
+    (isNow?` · day ${elapsed} of ${C.days}`:` · ${C.days} days`)+
+    (C.repayment?` · ${money2(C.repayment)} repayment`:'');
 
   /* ---- figures ---- */
   const aheadBy=target?(target*elapsed-spent):0;
   let html=`<div class="cyclefigs">
-    <div class="cyclefig"><div class="k">Spent so far</div>
+    <div class="cyclefig"><div class="k">${isPast?'Total spent':'Spent so far'}</div>
       <div class="v">${money2(spent)}</div>
-      <div class="n">${money2(pace)} a day</div></div>
-    ${target?`<div class="cyclefig"><div class="k">Against target</div>
+      <div class="n">${pace?money2(pace)+' a day':'nothing logged'}</div></div>
+    ${target&&!isFuture?`<div class="cyclefig"><div class="k">Against target</div>
       <div class="v ${aheadBy>=0?'good':'over'}">${aheadBy>=0?'−':'+'}${money2(Math.abs(aheadBy))}</div>
-      <div class="n">${aheadBy>=0?'under':'over'} by day ${elapsed}</div></div>`:''}
-    <div class="cyclefig"><div class="k">Projected by ${C.end.toLocaleDateString('en-AU',{day:'numeric',month:'short'})}</div>
+      <div class="n">${aheadBy>=0?'under':'over'}${isNow?` by day ${elapsed}`:' for the cycle'}</div></div>`:''}
+    ${isPast?'':`<div class="cyclefig"><div class="k">Projected by ${C.end.toLocaleDateString('en-AU',{day:'numeric',month:'short'})}</div>
       <div class="v ${target&&projected>budget?'watch':''}">${money2(projected)}</div>
-      <div class="n">${target?`target ${money2(budget)}`:'at current pace'}</div></div>
-    ${C.repayment?`<div class="cyclefig"><div class="k">Balance this cycle</div>
+      <div class="n">${target?`target ${money2(budget)}`:'at current pace'}</div></div>`}
+    ${C.repayment?`<div class="cyclefig"><div class="k">${isPast?'Balance moved':'Balance this cycle'}</div>
       <div class="v ${net>0?'over':'good'}">${net>0?'+':'−'}${money2(Math.abs(net))}</div>
-      <div class="n">${net>0?'growing':'shrinking'}</div></div>`:''}
+      <div class="n">${net>0?'grew':'shrank'}</div></div>`:''}
   </div>`;
 
   /* ---- the verdict ---- */
   if(C.repayment){
-    html+= net>0
-      ? `<div class="verdictbig bad">On this pace you'll put <strong>${money2(projected)}</strong> on the card this cycle. Add ${money2(interest)} of interest, against a ${money2(C.repayment)} repayment — the balance <strong>grows by ${money2(net)}</strong>.
-         To break even you'd need to hold spending to ${money2(Math.max(0,C.repayment-interest))} across the ${C.days} days, or ${money2(Math.max(0,(C.repayment-interest)/C.days))} a day.</div>`
-      : `<div class="verdictbig good">On this pace you'll put <strong>${money2(projected)}</strong> on the card, plus ${money2(interest)} interest, against a ${money2(C.repayment)} repayment — the balance <strong>falls by ${money2(-net)}</strong> this cycle.
-         Keep that up and it clears steadily.</div>`;
+    const be=Math.max(0,C.repayment-interest);
+    if(isPast){
+      html+= net>0
+        ? `<div class="verdictbig bad">That cycle put <strong>${money2(spent)}</strong> on the card. With ${money2(interest)} of interest against the ${money2(C.repayment)} repayment, the balance <strong>grew by ${money2(net)}</strong>. Break-even would have been ${money2(be/C.days)} a day.</div>`
+        : `<div class="verdictbig good">That cycle put <strong>${money2(spent)}</strong> on the card. With ${money2(interest)} of interest against the ${money2(C.repayment)} repayment, the balance <strong>fell by ${money2(-net)}</strong>.</div>`;
+    } else {
+      html+= net>0
+        ? `<div class="verdictbig bad">On this pace you'll put <strong>${money2(projected)}</strong> on the card this cycle. Add ${money2(interest)} of interest, against a ${money2(C.repayment)} repayment — the balance <strong>grows by ${money2(net)}</strong>.
+           To break even you'd need to hold spending to ${money2(be)} across the ${C.days} days, or ${money2(be/C.days)} a day.</div>`
+        : `<div class="verdictbig good">On this pace you'll put <strong>${money2(projected)}</strong> on the card, plus ${money2(interest)} interest, against a ${money2(C.repayment)} repayment — the balance <strong>falls by ${money2(-net)}</strong> this cycle.
+           Keep that up and it clears steadily.</div>`;
+    }
   }else{
     html+=`<div class="verdictbig bad">No card repayment scheduled, so there's nothing to measure against. Add it under Bills &amp; income as a Transfer into the card.</div>`;
   }
 
   /* ---- daily bars ---- */
-  const byDay={};
-  rows.forEach(t=>byDay[t.date]=(byDay[t.date]||0)+t.amount);
+  const byDay={}, byDayCount={};
+  rows.forEach(t=>{
+    byDay[t.date]=(byDay[t.date]||0)+t.amount;
+    byDayCount[t.date]=(byDayCount[t.date]||0)+1;
+  });
   const maxDay=Math.max(target||0,...Object.values(byDay),1);
   let bars='',labels='';
   for(let n=0;n<C.days;n++){
     const d=addDays(C.start,n), k=iso(d), v=byDay[k]||0;
     const future=d>TODAY, isToday=k===iso(TODAY);
-    const cls=[future?'future':'',target&&v>target?'over':'',isToday?'today':''].filter(Boolean).join(' ');
-    bars+=`<div class="daycol ${cls}" title="${d.toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})}: ${money2(v)}">
+    const cls=[future?'future':'',target&&v>target?'over':'',isToday?'today':'',k===pickedDay?'picked':''].filter(Boolean).join(' ');
+    bars+=`<div class="daycol ${cls}" data-day="${k}" title="${d.toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})}: ${money2(v)}">
       <span class="b" style="height:${Math.max(2,(v/maxDay)*100)}%"></span></div>`;
     labels+=`<span>${d.getDate()}</span>`;
   }
   html+=`<h2>Day by day</h2>
-    ${target?`<div class="meta" style="margin-bottom:4px">Amber bars are days over the ${money2(target)} target.</div>`:''}
+    <div class="meta" style="margin-bottom:4px">${target?`Amber bars are days over the ${money2(target)} target. `:''}Tap a bar to see what was bought.</div>
     <div class="daybars">${bars}</div><div class="daylabels">${labels}</div>`;
+
+  /* ---- what was spent on the selected day ---- */
+  if(pickedDay&&pickedDay>=iso(C.start)&&pickedDay<=iso(C.end)){
+    const items=rows.filter(t=>t.date===pickedDay).sort((a,b)=>b.amount-a.amount);
+    const tot=items.reduce((s,t)=>s+t.amount,0);
+    html+=`<div class="daydetail">
+      <div class="head">
+        <strong>${parseISO(pickedDay).toLocaleDateString('en-AU',{weekday:'long',day:'numeric',month:'long'})}</strong>
+        <span class="amt">${money2(tot)}${target?` <span class="meta">vs ${money2(target)} target</span>`:''}</span>
+      </div>`+
+      (items.length?items.map(t=>`<div class="row">
+          <span class="dot" style="background:${COLOUR[t.category]||'#9AA3A8'}"></span>
+          <span class="grow"><span class="clip">${esc(t.note||t.category)}</span>
+            <div class="meta">${esc(t.category)}${t.by?' · '+esc(firstName(t.by)):''}</div></span>
+          <span class="amt">${money2(t.amount)}</span></div>`).join('')
+        : '<div class="meta">Nothing on the card that day.</div>')+
+      `</div>`;
+  }
+
+  /* ---- biggest days in the cycle ---- */
+  const dayList=Object.entries(byDay).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  if(dayList.length>1){
+    html+=`<h2 style="margin-top:28px">Biggest days</h2><div>`+
+      dayList.map(([d,v],n)=>`<div class="bigday" data-day="${d}">
+        <span class="rank">${n+1}</span>
+        <span class="grow"><span class="clip">${parseISO(d).toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})}</span>
+          <div class="meta">${byDayCount[d]} purchase${byDayCount[d]===1?'':'s'}${target&&v>target?` · ${money2(v-target)} over target`:''}</div></span>
+        <span class="amt ${target&&v>target?'':''}" style="width:96px">${money2(v)}</span></div>`).join('')+
+      `</div>`;
+  }
 
   /* ---- previous cycles ---- */
   const hist=[];
@@ -1492,6 +1576,20 @@ function updateEntryForm(){
   $('note').placeholder = k==='income'?'Where from? (e.g. tax refund)'
     : k==='transfer'?'What for?' : 'What was it for?';
 }
+$('cyclePrev').addEventListener('click',()=>{ cycleOffset--; pickedDay=null; renderCycle(); });
+$('cycleNext').addEventListener('click',()=>{ cycleOffset++; pickedDay=null; renderCycle(); });
+$('cycleNow').addEventListener('click',()=>{ cycleOffset=0; pickedDay=null; renderCycle(); });
+
+$('cycleBody').addEventListener('click',e=>{
+  const d=e.target.closest('[data-day]'); if(!d)return;
+  pickedDay = pickedDay===d.dataset.day ? null : d.dataset.day;
+  renderCycle();
+  if(pickedDay){
+    const el=document.querySelector('.daydetail');
+    if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+});
+
 let targetTimer;
 $('dailyTarget').addEventListener('input',e=>{
   data.settings.dailyTarget=parseFloat(e.target.value)||0;
