@@ -73,6 +73,16 @@
   .fig .n{font-size:12.5px;color:var(--ink-faint);margin-top:2px}
   .fig .v.bad{color:var(--bad)} .fig .v.warn{color:var(--warn)} .fig .v.owe{color:var(--card)}
 
+  .spendctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .spendctl .k{font-size:12.5px;color:var(--ink-soft)}
+  .spendctl input{width:96px}
+  .estnote{font-size:12.5px;color:var(--ink-soft);margin-top:6px}
+  .estnote button{background:none;border:0;color:var(--accent);font:inherit;font-size:12.5px;
+    text-decoration:underline;cursor:pointer;padding:0}
+  .row .oneoff{font-size:11px;color:var(--ink-faint);border:1px solid var(--rule);
+    border-radius:4px;padding:2px 6px;background:none;cursor:pointer;white-space:nowrap}
+  .row .oneoff:hover{border-color:var(--accent);color:var(--accent)}
+  .row .oneoff.on{border-color:var(--ink-faint);background:var(--rule-soft);color:var(--ink-soft);font-weight:600}
   .chartbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;flex-wrap:wrap}
   .seg{display:flex;gap:2px;background:var(--rule-soft);padding:3px;border-radius:6px;flex-wrap:wrap}
   .seg button{font:inherit;font-size:12.5px;border:0;background:none;color:var(--ink-soft);padding:4px 10px;border-radius:4px;cursor:pointer}
@@ -319,7 +329,15 @@
       <div class="chartbar">
         <h2 style="margin:0">Projection</h2>
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-          <label class="toggle"><input type="checkbox" id="incVar" style="width:auto" checked> Include everyday spending</label>
+          <div class="spendctl">
+            <span class="k">Everyday spending</span>
+            <div class="seg" id="spendMode">
+              <button data-m="off" aria-pressed="false">None</button>
+              <button data-m="auto" aria-pressed="true">Estimated</button>
+              <button data-m="manual" aria-pressed="false">Set it</button>
+            </div>
+            <input type="number" id="spendPerDay" step="5" min="0" placeholder="$/day" aria-label="Everyday spending per day" hidden>
+          </div>
           <div class="seg" id="viewSeg">
             <button data-v="everyday" aria-pressed="true">Everyday</button>
             <button data-v="credit" aria-pressed="false">Card owing</button>
@@ -541,7 +559,7 @@ const defaultCashAccount=()=>accountsOf('everyday')[0]||data.accounts[0];
 function migrate(loaded){
   const d=Object.assign({accounts:[],txns:[],recurring:[],history:[],settings:{}},loaded||{});
   if(!Array.isArray(d.history)) d.history=[];
-  d.settings=Object.assign({pointsPerDollar:1,centsPerPoint:0.7,dailyTarget:200},d.settings);
+  d.settings=Object.assign({pointsPerDollar:1,centsPerPoint:0.7,dailyTarget:200,spendMode:'auto',spendPerDay:0},d.settings);
   if(!d.accounts.length){
     const ev={id:uid(),name:'Everyday',type:'everyday',balance:Number(loaded&&loaded.balance)||0,asAt:iso(TODAY),asAtTs:0};
     d.accounts=[ev];
@@ -629,15 +647,48 @@ function occurrences(item,from,to){
 }
 const monthlyEquiv=i=>i.amount*PER_YEAR[i.freq]/12;
 
-function dailyVariableByAccount(){
-  const from=addDays(TODAY,-60), out={};
-  const rows=data.txns.filter(t=>t.kind==='spend'&&t.src!=='recurring'&&parseISO(t.date)>=from&&parseISO(t.date)<=TODAY);
-  if(!rows.length) return out;
+const median=a=>{ if(!a.length) return 0; const s=[...a].sort((x,y)=>x-y), m=s.length>>1;
+  return s.length%2?s[m]:(s[m-1]+s[m])/2; };
+
+/* Work out a typical day's spending, and be honest about the working.
+   One-offs you've flagged are excluded, and so is any single purchase far
+   above the rest — with a week of data one big buy otherwise sets the rate. */
+function spendEstimate(){
+  const from=addDays(TODAY,-60);
+  const all=data.txns.filter(t=>t.kind==='spend'&&t.src!=='recurring'
+    &&parseISO(t.date)>=from&&parseISO(t.date)<=TODAY);
+  const flagged=all.filter(t=>t.oneOff).length;
+  const rows=all.filter(t=>!t.oneOff);
+  if(!rows.length) return {perAccount:{},perDay:0,days:0,n:0,flagged,outliers:0,thin:true};
+
   const first=rows.reduce((m,t)=>Math.min(m,parseISO(t.date).getTime()),Infinity);
-  const days=Math.max(7,Math.round((TODAY-first)/86400000)+1);
-  rows.forEach(t=>{ const k=t.account||(defaultSpendAccount()||{}).id; out[k]=(out[k]||0)+t.amount; });
-  Object.keys(out).forEach(k=>out[k]=out[k]/days);
-  return out;
+  const days=Math.max(1,Math.round((TODAY-first)/86400000)+1);
+
+  // anything more than 4x the typical purchase is treated as unusual
+  const med=median(rows.map(t=>t.amount));
+  const cap=med>0?med*4:Infinity;
+  const kept=rows.filter(t=>t.amount<=cap);
+  const outliers=rows.length-kept.length;
+  const use=kept.length?kept:rows;
+
+  const perAccount={};
+  use.forEach(t=>{ const k=t.account||(defaultSpendAccount()||{}).id;
+    perAccount[k]=(perAccount[k]||0)+t.amount; });
+  let perDay=0;
+  Object.keys(perAccount).forEach(k=>{ perAccount[k]=perAccount[k]/days; perDay+=perAccount[k]; });
+  return {perAccount,perDay,days,n:use.length,flagged,outliers,thin:days<14};
+}
+
+function dailyVariableByAccount(){
+  const mode=data.settings.spendMode||'auto';
+  if(mode==='off') return {};
+  if(mode==='manual'){
+    const v=Number(data.settings.spendPerDay)||0;
+    const id=(defaultSpendAccount()||{}).id;
+    return id&&v>0?{[id]:v}:{};
+  }
+  const e=spendEstimate();
+  return e.thin?{}:e.perAccount;   // too little history to guess with
 }
 
 function applySpend(bal,accId,amount){
@@ -791,9 +842,23 @@ function drawChart(){
   showScrub(null);
 
   let varTotal=0; for(const k in perDay) varTotal+=perDay[k];
-  let legend = varTotal>0
-    ? `${VIEW_LABEL[view]}. Includes everyday spending of about ${money2(varTotal)}/day, averaged from recent transactions and charged to the accounts you've been using.`
-    : `${VIEW_LABEL[view]}. Scheduled items only — tick the box to factor in everyday spending.`;
+  const mode=data.settings.spendMode||'auto';
+  const est=spendEstimate();
+  let legend;
+  if(varTotal>0&&mode==='manual'){
+    legend=`${VIEW_LABEL[view]}. Everyday spending set by you at ${money2(varTotal)}/day.`;
+  } else if(varTotal>0){
+    const bits=[`${est.n} purchase${est.n===1?'':'s'} over ${est.days} days`];
+    if(est.flagged) bits.push(`${est.flagged} marked one-off`);
+    if(est.outliers) bits.push(`${est.outliers} unusually large ${est.outliers===1?'one':'ones'} set aside`);
+    legend=`${VIEW_LABEL[view]}. Everyday spending estimated at ${money2(varTotal)}/day — ${bits.join(', ')}.`;
+  } else if(mode==='off'){
+    legend=`${VIEW_LABEL[view]}. Scheduled items only, no everyday spending in the forecast.`;
+  } else if(est.thin){
+    legend=`${VIEW_LABEL[view]}. Only ${est.days} day${est.days===1?'':'s'} of spending logged so far — not enough to estimate a daily rate, so the forecast shows scheduled items only. It'll start estimating at two weeks, or set a figure yourself.`;
+  } else {
+    legend=`${VIEW_LABEL[view]}. Nothing logged yet to estimate everyday spending from.`;
+  }
   if(todayIdx>0){
     const first=pts[0].date.toLocaleDateString('en-AU',{day:'numeric',month:'short'});
     legend=`Solid to the left of the marker is what actually happened, from ${first}. `+legend;
@@ -1275,8 +1340,9 @@ function renderSpend(){
         const what=inc?'Income':tr?'Transfer':esc(t.category);
         return `<div class="row"><span class="dot" style="background:${c}"></span>
         <span class="grow"><span class="clip">${esc(title)}</span>
-          <div class="meta">${what} · ${where}${t.src==='recurring'?' · scheduled':''}${t.by?' · '+esc(firstName(t.by)):''}</div></span>
+          <div class="meta">${what} · ${where}${t.src==='recurring'?' · scheduled':''}${t.oneOff?' · not in the estimate':''}${t.by?' · '+esc(firstName(t.by)):''}</div></span>
         <span class="amt${inc?' in':''}" style="width:98px">${inc?'+':tr?'':''}${money2(t.amount)}</span>
+        ${t.kind==='spend'&&t.src!=='recurring'?`<button class="oneoff${t.oneOff?' on':''}" data-oneoff="${t.id}" title="Leave this out of the everyday spending estimate">${t.oneOff?'one-off':'regular'}</button>`:''}
         <button class="del" data-del="${t.id}" aria-label="Delete">&times;</button></div>`;
       }).join('');
   }).join('');
@@ -1425,6 +1491,7 @@ function updateRecHint(){
 
 function renderAll(){
   recordSnapshot();
+  syncSpendMode();
   fillAccountSelects();
   drawChart(); renderFigures(); renderPauseBar(); renderCard(); renderUpcoming();
   renderBand('dashSummary','dashCats',new Date());
@@ -1456,7 +1523,29 @@ $('horizon').addEventListener('click',e=>{
   $('horizon').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
   drawChart(); renderFigures(); renderPauseBar();
 });
-$('incVar').addEventListener('change',e=>{includeVariable=e.target.checked;drawChart();renderFigures();renderCard();});
+function syncSpendMode(){
+  const mode=data.settings.spendMode||'auto';
+  $('spendMode').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.m===mode)));
+  const box=$('spendPerDay');
+  box.hidden=mode!=='manual';
+  if(mode==='manual'&&!box.value) box.value=data.settings.spendPerDay||Math.round(spendEstimate().perDay)||0;
+  includeVariable=mode!=='off';
+}
+
+$('spendMode').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  data.settings.spendMode=b.dataset.m;
+  if(b.dataset.m==='manual'&&!data.settings.spendPerDay)
+    data.settings.spendPerDay=Math.round(spendEstimate().perDay)||0;
+  syncSpendMode(); drawChart(); renderFigures(); renderCard(); persist();
+});
+
+let spendTimer;
+$('spendPerDay').addEventListener('input',e=>{
+  data.settings.spendPerDay=parseFloat(e.target.value)||0;
+  drawChart(); renderFigures(); renderCard();
+  clearTimeout(spendTimer); spendTimer=setTimeout(persist,900);
+});
 
 $('histSeg').addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
@@ -1551,6 +1640,14 @@ $('entry').addEventListener('submit',async e=>{
 });
 
 $('list').addEventListener('click',async e=>{
+  const oo=e.target.closest('[data-oneoff]');
+  if(oo){
+    const t=data.txns.find(x=>String(x.id)===oo.dataset.oneoff); if(!t)return;
+    t.oneOff=!t.oneOff;
+    renderAll(); await persist();
+    status(t.oneOff?'Left out of the everyday estimate.':'Counted as regular spending.',4000);
+    return;
+  }
   const b=e.target.closest('[data-del]'); if(!b)return;
   data.txns=data.txns.filter(t=>String(t.id)!==b.dataset.del);
   renderAll(); await persist();
