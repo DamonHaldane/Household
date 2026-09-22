@@ -155,6 +155,15 @@
   .cyclehist{border-top:1px solid var(--rule)}
   .filterbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
   .filterbar select,.filterbar input{width:auto;min-width:130px;flex:0 1 auto}
+  .filterbar .searchbox{min-width:200px;flex:1 1 200px}
+  .searchsum{background:var(--rule-soft);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+  .searchsum .big{font-size:26px;font-weight:700;letter-spacing:-0.02em;line-height:1.1}
+  .searchsum .sub{font-size:13px;color:var(--ink-soft);margin-top:3px}
+  .bymonth{display:flex;gap:4px;align-items:flex-end;height:64px;margin-top:14px}
+  .bymonth .mcol{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;height:100%;min-width:0}
+  .bymonth .mbar{width:100%;max-width:38px;background:var(--accent);border-radius:2px 2px 0 0;min-height:2px}
+  .bymonth .mlab{font-size:10px;color:var(--ink-faint);white-space:nowrap}
+  .searching .monthnav{opacity:.4;pointer-events:none}
   .filtered{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;background:var(--rule-soft);
     border-radius:8px;padding:11px 14px;margin-bottom:12px}
   .filtered .amt2{font-size:20px;font-weight:700;letter-spacing:-0.01em}
@@ -400,6 +409,7 @@
       <button type="submit" class="add" id="addBtn">Add spend</button>
     </form>
     <div class="filterbar">
+      <input type="search" id="fSearch" placeholder="Search all months…" aria-label="Search transactions" class="searchbox">
       <select id="fAccount" aria-label="Filter by account"><option value="">All accounts</option></select>
       <input type="date" id="fDay" aria-label="Filter by day">
       <button class="mini" id="fToday">Today</button>
@@ -407,6 +417,7 @@
     </div>
     <div id="filterChip"></div>
     <div class="filtered" id="filterSum" hidden></div>
+    <div class="searchsum" id="searchSum" hidden></div>
     <div class="head">
       <h2 style="margin:0">Transactions</h2>
       <div class="monthnav">
@@ -545,7 +556,7 @@ const uid=()=>Date.now()+Math.floor(Math.random()*1000);
 let cursor=new Date(), horizon=90, includeVariable=true, view='everyday';
 let chartGeom=null, catFilter=null, editingId=null, acctFilter=null, dayFilter=null;
 let showHistory=true, historyDays=180;
-let cycleOffset=0, pickedDay=null;
+let cycleOffset=0, pickedDay=null, searchTerm='';
 const TODAY=parseISO(iso(new Date()));
 
 function status(m,ms=2200){$('status').textContent=m;if(ms)setTimeout(()=>{if($('status').textContent===m)$('status').textContent='';},ms);}
@@ -1281,15 +1292,25 @@ function renderTrend(){
       <span class="tlab">${m.d.toLocaleDateString('en-AU',{month:'short'})}</span></div>`).join('');
 }
 
+const matches=(t,q)=>{
+  const hay=((t.note||'')+' '+(t.category||'')+' '+((acct(t.account)||{}).name||'')).toLowerCase();
+  return q.split(/\s+/).filter(Boolean).every(w=>hay.includes(w));
+};
+
 function renderSpend(){
   $('monthLabel').textContent=monthName(cursor);
-  let rows=monthAll(cursor).sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
-  renderBand('spendSummary','list',cursor);
+  const q=searchTerm.trim().toLowerCase();
+  $('tab-spend').classList.toggle('searching',!!q);
+  let rows = q
+    ? data.txns.filter(t=>matches(t,q)).sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id)
+    : monthAll(cursor).sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
+  if(q){ $('spendSummary').innerHTML=''; } else renderBand('spendSummary','list',cursor);
   // chips for whatever is currently narrowing the list
   const chips=[];
   if(catFilter) chips.push(`<span class="chip"><span class="dot" style="background:${COLOUR[catFilter]||'#9AA3A8'}"></span>${esc(catFilter)} <button data-clear="cat" aria-label="Clear category">&times;</button></span>`);
   if(acctFilter!=null) chips.push(`<span class="chip">${esc((acct(acctFilter)||{}).name||'Account')} <button data-clear="acct" aria-label="Clear account">&times;</button></span>`);
   if(dayFilter) chips.push(`<span class="chip">${parseISO(dayFilter).toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'})} <button data-clear="day" aria-label="Clear day">&times;</button></span>`);
+  if(q) chips.push(`<span class="chip">“${esc(searchTerm.trim())}” <button data-clear="search" aria-label="Clear search">&times;</button></span>`);
   $('filterChip').innerHTML=chips.join(' ');
   $('fClear').hidden=!chips.length;
   $('fAccount').value=acctFilter==null?'':String(acctFilter);
@@ -1303,8 +1324,42 @@ function renderSpend(){
   const fSpend=rows.filter(t=>t.kind==='spend').reduce((s,t)=>s+t.amount,0);
   const fIncome=rows.filter(t=>t.kind==='income').reduce((s,t)=>s+t.amount,0);
   const filtered=chips.length>0;
-  $('filterSum').hidden=!filtered;
-  if(filtered){
+
+  if(q&&rows.length){
+    const spends=rows.filter(t=>t.kind==='spend');
+    const dates=rows.map(t=>t.date).sort();
+    const firstD=parseISO(dates[0]), lastD=parseISO(dates[dates.length-1]);
+    const months={};
+    spends.forEach(t=>{ const k=t.date.slice(0,7); months[k]=(months[k]||0)+t.amount; });
+    const mk=Object.keys(months).sort();
+    const spanMonths=Math.max(1,
+      (lastD.getFullYear()-firstD.getFullYear())*12+(lastD.getMonth()-firstD.getMonth())+1);
+    const avgMonth=fSpend/spanMonths;
+    const biggest=spends.reduce((m,t)=>t.amount>(m?m.amount:0)?t:m,null);
+    const maxM=Math.max(...Object.values(months),1);
+
+    $('filterSum').hidden=true;
+    $('searchSum').hidden=false;
+    $('searchSum').innerHTML=`
+      <div class="big">${money2(fSpend)}</div>
+      <div class="sub">${spends.length} purchase${spends.length===1?'':'s'} matching “${esc(searchTerm.trim())}”`+
+      (rows.length>spends.length?`, plus ${rows.length-spends.length} other entr${rows.length-spends.length===1?'y':'ies'}`:'')+
+      ` · ${firstD.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'})} to ${lastD.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'})}</div>
+      <div class="sub">${money2(avgMonth)} a month across ${spanMonths} month${spanMonths===1?'':'s'}`+
+      (spends.length?` · average ${money2(fSpend/spends.length)} each`:'')+
+      (biggest?` · biggest ${money2(biggest.amount)}${biggest.note?' ('+esc(biggest.note)+')':''}`:'')+`</div>`+
+      (mk.length>1?`<div class="bymonth">`+mk.map(k=>{
+        const d=parseISO(k+'-01');
+        return `<div class="mcol" title="${monthName(d)}: ${money2(months[k])}">
+          <span class="mbar" style="height:${(months[k]/maxM*100).toFixed(1)}%"></span>
+          <span class="mlab">${d.toLocaleDateString('en-AU',{month:'short'})}</span></div>`;
+      }).join('')+`</div>`:'');
+  } else {
+    $('searchSum').hidden=true;
+  }
+
+  $('filterSum').hidden=!filtered||!!q;
+  if(filtered&&!q){
     const bits=[];
     if(fSpend>0)  bits.push(`<span class="amt2">${money2(fSpend)}</span> spent`);
     if(fIncome>0) bits.push(`<span class="amt2 in">${money2(fIncome)}</span> in`);
@@ -1317,7 +1372,9 @@ function renderSpend(){
       ` <span class="meta">${rows.length} ${rows.length===1?'entry':'entries'}${what?' — '+what:''}</span>`;
   }
   if(!rows.length){
-    $('list').innerHTML=(catFilter||acctFilter!=null||dayFilter)
+    $('list').innerHTML = q
+      ? `<div class="empty" style="border-top:0">Nothing found for “${esc(searchTerm.trim())}”. Searches notes, categories and account names.</div>`
+      : (catFilter||acctFilter!=null||dayFilter)
       ? `<div class="empty" style="border-top:0">Nothing matches those filters in ${monthName(cursor)}.</div>` : '';
     return;
   }
@@ -1327,7 +1384,9 @@ function renderSpend(){
   const days=[];
   rows.forEach(t=>{let g=days.find(x=>x.date===t.date);if(!g){g={date:t.date,items:[]};days.push(g);}g.items.push(t);});
   $('list').innerHTML=days.map(g=>{
-    const label=parseISO(g.date).toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'});
+    const gd=parseISO(g.date);
+    const label=gd.toLocaleDateString('en-AU',
+      q?{weekday:'short',day:'numeric',month:'short',year:'numeric'}:{weekday:'short',day:'numeric',month:'short'});
     const dayTotal=g.items.filter(t=>t.kind==='spend').reduce((s,t)=>s+t.amount,0);
     return `<div class="dayhead" data-day="${g.date}" title="Show only this day">${label}${dayTotal>0?` · ${money2(dayTotal)}`:''}</div>`+
       g.items.map(t=>{
@@ -1592,7 +1651,15 @@ $('filterChip').addEventListener('click',e=>{
   if(b.dataset.clear==='cat') catFilter=null;
   if(b.dataset.clear==='acct') acctFilter=null;
   if(b.dataset.clear==='day') dayFilter=null;
+  if(b.dataset.clear==='search'){ searchTerm=''; $('fSearch').value=''; }
   renderSpend();
+});
+
+let searchTimer;
+$('fSearch').addEventListener('input',e=>{
+  const v=e.target.value;
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(()=>{ searchTerm=v; dayFilter=null; renderSpend(); },160);
 });
 
 $('fAccount').addEventListener('change',e=>{
@@ -1608,7 +1675,7 @@ $('fToday').addEventListener('click',()=>{
   dayFilter=iso(TODAY); cursor=new Date(TODAY); renderSpend();
 });
 $('fClear').addEventListener('click',()=>{
-  catFilter=null; acctFilter=null; dayFilter=null; renderSpend();
+  catFilter=null; acctFilter=null; dayFilter=null; searchTerm=''; $('fSearch').value=''; renderSpend();
 });
 
 /* clicking a day heading isolates that day */
