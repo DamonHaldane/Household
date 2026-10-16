@@ -115,6 +115,33 @@
   .pausebar button{background:none;border:0;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer;padding:0;margin-left:auto}
   .row.clickable{cursor:pointer}
   .row.clickable:hover{background:var(--rule-soft)}
+  form.xmas{grid-template-columns:repeat(auto-fit,minmax(104px,1fr));align-items:start}
+  form.xmas .wide{grid-column:span 2}
+  .xfigs{display:flex;flex-wrap:wrap;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-bottom:22px}
+  .xfig{flex:1 1 150px;padding:14px 18px 14px 0;margin-right:18px;border-right:1px solid var(--rule)}
+  .xfig:last-child{border-right:0;margin-right:0}
+  .xfig .k{font-size:12.5px;color:var(--ink-soft);margin-bottom:3px}
+  .xfig .v{font-size:25px;font-weight:700;letter-spacing:-0.02em;line-height:1.1}
+  .xfig .n{font-size:12.5px;color:var(--ink-faint);margin-top:2px}
+  .kidcard{border:1px solid var(--rule);border-radius:10px;padding:16px;margin-bottom:14px}
+  .kidhead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .kidname{font-size:17px;font-weight:600;letter-spacing:-0.01em}
+  .kidtot{font-size:20px;font-weight:700;letter-spacing:-0.01em}
+  .kidbar{height:8px;border-radius:4px;background:var(--rule-soft);overflow:hidden;margin:10px 0 4px}
+  .kidbar span{display:block;height:100%;background:var(--accent);transition:width .3s ease}
+  .kidbar span.over{background:var(--bad)}
+  .fairness{display:flex;gap:4px;align-items:flex-end;height:90px;margin:8px 0 4px}
+  .fcol{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px;height:100%;min-width:0}
+  .fbar{width:100%;max-width:70px;border-radius:3px 3px 0 0;min-height:3px;background:var(--accent)}
+  .flab{font-size:11.5px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .fval{font-size:11.5px;color:var(--ink-faint)}
+  .status{font-size:11px;border-radius:4px;padding:2px 7px;white-space:nowrap}
+  .status.idea{background:var(--rule-soft);color:var(--ink-soft)}
+  .status.bought{background:#E6F1EC;color:#1F5244}
+  .status.wrapped{background:#EFE9F2;color:#4F3A5E}
+  .budgetrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .budgetrow label{font-size:12.5px;color:var(--ink-soft)}
+  .budgetrow input{width:110px}
   .cyclenav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px}
   .cyclenav button{background:none;border:1px solid var(--rule);color:var(--ink-soft);
     width:28px;height:28px;border-radius:var(--radius);cursor:pointer;font-size:14px;line-height:1;flex:0 0 auto}
@@ -188,6 +215,8 @@
   .util{height:10px;border-radius:5px;background:var(--rule-soft);overflow:hidden;margin:12px 0 6px}
   .util span{display:block;height:100%;background:var(--card);transition:width .3s ease}
   .util span.hot{background:var(--bad)}
+  .splitline{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-soft);margin-top:8px}
+  .splitline span{white-space:nowrap}
   .cardstats{display:flex;flex-wrap:wrap;gap:22px;margin-top:16px}
   .cardstat{flex:1 1 140px}
   .cardstat .k{font-size:12.5px;color:var(--ink-soft)}
@@ -216,6 +245,8 @@
   .settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
   .settings label{display:block;font-size:12.5px;color:var(--ink-soft);margin-bottom:4px}
   .acctcard{border:1px solid var(--rule);border-radius:10px;padding:16px;margin-bottom:14px}
+  .plans{margin-top:14px;padding-top:13px;border-top:1px solid var(--rule-soft)}
+  .planrow{background:var(--rule-soft);border-radius:8px;padding:12px 14px;margin-bottom:10px}
   .nowline{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-top:10px}
   .nowline .k{font-size:12.5px;color:var(--ink-soft)}
   .nowval{font-size:26px;font-weight:700;letter-spacing:-0.02em;line-height:1.1}
@@ -324,6 +355,7 @@
       <button role="tab" data-tab="spend" aria-selected="false">Spending</button>
       <button role="tab" data-tab="bills" aria-selected="false">Bills &amp; income</button>
       <button role="tab" data-tab="cycle" aria-selected="false">Card cycle</button>
+      <button role="tab" data-tab="xmas" aria-selected="false">Christmas</button>
       <button role="tab" data-tab="accounts" aria-selected="false">Accounts</button>
     </nav>
   </header>
@@ -481,6 +513,22 @@
     <div id="cycleBody"></div>
   </div>
 
+  <div id="tab-xmas" hidden>
+    <form class="entry xmas" id="xForm" autocomplete="off">
+      <select id="xWho" aria-label="Who it's for"></select>
+      <input type="text" id="xName" class="wide" placeholder="What is it?" aria-label="Present" required>
+      <input type="number" id="xCost" step="0.01" min="0" placeholder="Cost each" aria-label="Cost">
+      <input type="number" id="xQty" step="1" min="1" value="1" placeholder="Qty" aria-label="Quantity">
+      <select id="xStatus" aria-label="Status">
+        <option value="idea">Idea</option>
+        <option value="bought" selected>Bought</option>
+        <option value="wrapped">Wrapped</option>
+      </select>
+      <button type="submit" class="add">Add present</button>
+    </form>
+    <div id="xmasBody"></div>
+  </div>
+
   <div id="tab-accounts" hidden>
     <form class="entry acct" id="acctForm" autocomplete="off">
       <input type="text" id="aName" placeholder="Account name" aria-label="Account name" required>
@@ -571,6 +619,11 @@ function migrate(loaded){
   const d=Object.assign({accounts:[],txns:[],recurring:[],history:[],settings:{}},loaded||{});
   if(!Array.isArray(d.history)) d.history=[];
   d.settings=Object.assign({pointsPerDollar:1,centsPerPoint:0.7,dailyTarget:200,spendMode:'auto',spendPerDay:0},d.settings);
+  if(!d.christmas||typeof d.christmas!=='object') d.christmas={recipients:[],items:[],budget:{}};
+  if(!Array.isArray(d.christmas.recipients)) d.christmas.recipients=[];
+  if(!Array.isArray(d.christmas.items)) d.christmas.items=[];
+  if(!d.christmas.budget) d.christmas.budget={};
+  if(!d.christmas.recipients.length) d.christmas.recipients=['Chloe','James','Alfie'];
   if(!d.accounts.length){
     const ev={id:uid(),name:'Everyday',type:'everyday',balance:Number(loaded&&loaded.balance)||0,asAt:iso(TODAY),asAtTs:0};
     d.accounts=[ev];
@@ -578,7 +631,11 @@ function migrate(loaded){
     d.recurring.forEach(r=>{ if(!r.account) r.account=ev.id; });
   }
   // every account is anchored to a date it was last known true
-  d.accounts.forEach(a=>{ if(!a.asAt) a.asAt=iso(TODAY); if(a.asAtTs==null) a.asAtTs=0; });
+  d.accounts.forEach(a=>{
+    if(!a.asAt) a.asAt=iso(TODAY);
+    if(a.asAtTs==null) a.asAtTs=0;
+    if(a.type==='credit'&&!Array.isArray(a.plans)) a.plans=[];
+  });
   // older entries were all spending
   d.txns.forEach(t=>{ if(!t.kind) t.kind='spend'; });
   delete d.balance;
@@ -730,7 +787,18 @@ function project(days,withPaused){
 
   const perDay=includeVariable?dailyVariableByAccount():{};
   const bal={}; data.accounts.forEach(a=>bal[a.id]=currentBalance(a.id));
-  const pts=[{date:new Date(TODAY),bal:Object.assign({},bal),events:[]}];
+  // plan balances ride along separately; each is on its own fixed rate
+  const plans={};
+  accountsOf('credit').forEach(a=>{
+    plans[a.id]=plansOf(a.id).map(p=>({
+      bal:Number(p.balance)||0, apr:Number(p.apr)||0, monthly:Number(p.monthly)||0,
+      next:p.next||iso(addMonths(TODAY,1))
+    }));
+  });
+  const planSum=id=>(plans[id]||[]).reduce((s,p)=>s+p.bal,0);
+  const snap=()=>{ const o={}; data.accounts.forEach(a=>o[a.id]=bal[a.id]); 
+                   data.accounts.forEach(a=>{ if(a.type==='credit') o[a.id]+=planSum(a.id); }); return o; };
+  const pts=[{date:new Date(TODAY),bal:snap(),events:[]}];
   const cards=data.accounts.filter(a=>a.type==='credit'&&Number(a.apr)>0);
 
   for(let n=1;n<=days;n++){
@@ -743,12 +811,27 @@ function project(days,withPaused){
     });
     for(const id in perDay) applySpend(bal,Number(id),perDay[id]);
     cards.forEach(a=>{ if((bal[a.id]||0)>0) bal[a.id]+=bal[a.id]*(Number(a.apr)/100/365); });
-    pts.push({date:d,bal:Object.assign({},bal),events:evs});
+
+    // instalments fall due monthly: the plan shrinks, and that part of your
+    // payment is consumed servicing it rather than the revolving balance
+    for(const aid in plans){
+      plans[aid].forEach(p=>{
+        if(p.bal<=0.5) return;
+        while(p.next<=key&&p.bal>0.5){
+          const r=planStep(p.bal,p);
+          if(r.principal<=0) break;
+          p.bal=r.balance;
+          bal[Number(aid)]=(bal[Number(aid)]||0)+p.monthly;
+          p.next=iso(addMonths(parseISO(p.next),1));
+        }
+      });
+    }
+    pts.push({date:d,bal:snap(),events:evs});
   }
   return {pts,perDay};
 }
 
-const sumOf=(type,b)=>accountsOf(type).reduce((s,a)=>s+(b?(b[a.id]||0):currentBalance(a.id)),0);
+const sumOf=(type,b)=>accountsOf(type).reduce((s,a)=>s+(b?(b[a.id]||0):(a.type==='credit'?owing(a.id):currentBalance(a.id))),0);
 function seriesValue(b){
   if(view==='everyday') return sumOf('everyday',b);
   if(view==='credit')   return sumOf('credit',b);
@@ -908,8 +991,9 @@ function scrubFrom(clientX){
   showScrub(Math.max(0,Math.min(pts.length-1,i)));
 }
 
-const cardInterestPerMonth=()=>accountsOf('credit')
-  .reduce((s,a)=>s+(currentBalance(a.id)*((Number(a.apr)||0)/100/12)),0);
+const cardInterestPerMonth=()=>accountsOf('credit').reduce((s,a)=>
+  s + currentBalance(a.id)*((Number(a.apr)||0)/100/12)
+    + plansOf(a.id).reduce((t,p)=>t+(Number(p.balance)||0)*((Number(p.apr)||0)/100/12),0), 0);
 function cardSpendPerMonth(){
   const per=dailyVariableByAccount();
   return accountsOf('credit').reduce((s,a)=>s+((per[a.id]||0)*30.44),0);
@@ -1018,6 +1102,33 @@ function cycleBounds(offset){
 
 const cardIds=()=>accountsOf('credit').map(a=>a.id);
 
+/* An instalment plan is a slice of the card balance on a cheaper fixed rate,
+   repaid by a set monthly amount folded into the minimum payment. */
+const plansOf=id=>{const a=acct(id);return (a&&Array.isArray(a.plans))?a.plans:[];};
+const planTotal=id=>plansOf(id).reduce((s,p)=>s+(Number(p.balance)||0),0);
+/* total owed on the card: the revolving part plus any plans */
+const owing=id=>currentBalance(id)+planTotal(id);
+
+/* one month of a plan */
+function planStep(bal,p){
+  const interest=bal*((Number(p.apr)||0)/100/12);
+  const principal=Math.max(0,Math.min((Number(p.monthly)||0)-interest,bal));
+  return {interest,principal,balance:Math.max(0,bal-principal)};
+}
+function planMonthsLeft(p){
+  let b=Number(p.balance)||0,n=0;
+  while(b>0.5&&n<600){ const r=planStep(b,p); if(r.principal<=0) return Infinity; b=r.balance; n++; }
+  return n;
+}
+/* weighted rate across the revolving balance and every plan */
+function blendedRate(id){
+  const a=acct(id); if(!a) return 0;
+  const rev=currentBalance(id), tot=rev+planTotal(id);
+  if(tot<=0) return Number(a.apr)||0;
+  return (rev*(Number(a.apr)||0)
+    +plansOf(id).reduce((s,p)=>s+(Number(p.balance)||0)*(Number(p.apr)||0),0))/tot;
+}
+
 function cardSpendBetween(from,to){
   const ids=cardIds(), a=iso(from), b=iso(to);
   return data.txns.filter(t=>t.kind==='spend'&&ids.includes(t.account)&&t.date>=a&&t.date<=b);
@@ -1037,9 +1148,12 @@ function avgCardBalance(from,to){
 }
 
 function cycleInterest(from,to,days){
+  // the snapshots hold total owing, so cost it at the blended rate
   const bal=avgCardBalance(from,to);
-  const apr=accountsOf('credit').reduce((s,a)=>Math.max(s,Number(a.apr)||0),0);
-  return bal*(apr/100/365)*days;
+  const rate=accountsOf('credit').length
+    ? accountsOf('credit').reduce((s,a)=>s+blendedRate(a.id),0)/accountsOf('credit').length
+    : 0;
+  return bal*(rate/100/365)*days;
 }
 
 function renderCycle(){
@@ -1180,6 +1294,106 @@ function renderCycle(){
   $('dailyTarget').value=target||'';
 }
 
+/* ===================== Christmas ===================== */
+const XSTATUS={idea:'Idea',bought:'Bought',wrapped:'Wrapped'};
+const xmas=()=>data.christmas;
+const xLine=i=>(Number(i.cost)||0)*(Number(i.qty)||1);
+
+function renderXmas(){
+  const X=xmas();
+  const people=X.recipients.slice();
+  const items=X.items;
+
+  const forWho=w=>items.filter(i=>i.who===w);
+  const spentOn=w=>forWho(w).filter(i=>i.status!=='idea').reduce((s,i)=>s+xLine(i),0);
+  const plannedOn=w=>forWho(w).reduce((s,i)=>s+xLine(i),0);
+  const countOn=w=>forWho(w).filter(i=>i.status!=='idea').reduce((s,i)=>s+(Number(i.qty)||1),0);
+
+  const totalSpent=items.filter(i=>i.status!=='idea').reduce((s,i)=>s+xLine(i),0);
+  const totalPlanned=items.reduce((s,i)=>s+xLine(i),0);
+  const totalGifts=items.filter(i=>i.status!=='idea').reduce((s,i)=>s+(Number(i.qty)||1),0);
+  const ideas=items.filter(i=>i.status==='idea');
+  const budgetTotal=people.reduce((s,w)=>s+(Number(X.budget[w])||0),0);
+
+  const xmasDay=new Date(TODAY.getFullYear(),11,25);
+  if(xmasDay<TODAY) xmasDay.setFullYear(TODAY.getFullYear()+1);
+  const sleeps=Math.round((xmasDay-TODAY)/86400000);
+
+  let html=`<div class="xfigs">
+    <div class="xfig"><div class="k">Spent so far</div><div class="v">${money2(totalSpent)}</div>
+      <div class="n">${budgetTotal>0?`of ${money2(budgetTotal)} budget`:'no budget set'}</div></div>
+    <div class="xfig"><div class="k">Presents bought</div><div class="v">${totalGifts}</div>
+      <div class="n">${people.length?`${(totalGifts/people.length).toFixed(1)} each on average`:''}</div></div>
+    ${ideas.length?`<div class="xfig"><div class="k">Still just ideas</div><div class="v watch">${money2(totalPlanned-totalSpent)}</div>
+      <div class="n">${ideas.length} item${ideas.length===1?'':'s'} not bought</div></div>`:''}
+    <div class="xfig"><div class="k">Sleeps to go</div><div class="v">${sleeps}</div>
+      <div class="n">${xmasDay.toLocaleDateString('en-AU',{day:'numeric',month:'long',year:'numeric'})}</div></div>
+  </div>`;
+
+  /* ---- fairness across the kids ---- */
+  if(people.length>1&&totalSpent>0){
+    const max=Math.max(...people.map(spentOn),1);
+    const spreads=people.map(spentOn);
+    const gap=Math.max(...spreads)-Math.min(...spreads);
+    html+=`<h2>Even-handed?</h2>
+      <div class="fairness">`+people.map(w=>{
+        const v=spentOn(w);
+        return `<div class="fcol" title="${esc(w)}: ${money2(v)}, ${countOn(w)} present${countOn(w)===1?'':'s'}">
+          <span class="fval">${v>0?money(v):''}</span>
+          <span class="fbar" style="height:${(v/max*100).toFixed(1)}%"></span>
+          <span class="flab">${esc(w)}</span></div>`;
+      }).join('')+`</div>
+      <div class="meta" style="margin-bottom:24px">${gap<1?'Dead even.':`${money2(gap)} between the most and least spent on.`} Counts: ${people.map(w=>`${esc(w)} ${countOn(w)}`).join(' · ')}</div>`;
+  }
+
+  /* ---- a card per person ---- */
+  html+=people.map(w=>{
+    const list=forWho(w).slice().sort((a,b)=>b.id-a.id);
+    const spent=spentOn(w), planned=plannedOn(w), budget=Number(X.budget[w])||0;
+    const pc=budget>0?Math.min(100,spent/budget*100):0;
+    return `<div class="kidcard">
+      <div class="kidhead">
+        <div><span class="kidname">${esc(w)}</span>
+          <span class="meta">· ${countOn(w)} present${countOn(w)===1?'':'s'}${planned>spent?` · ${money2(planned-spent)} still to buy`:''}</span></div>
+        <div class="kidtot">${money2(spent)}</div>
+      </div>
+      ${budget>0?`<div class="kidbar"><span class="${spent>budget?'over':''}" style="width:${pc}%"></span></div>
+        <div class="meta">${spent>budget?`${money2(spent-budget)} over the ${money2(budget)} budget`:`${money2(budget-spent)} left of ${money2(budget)}`}</div>`:''}
+      <div class="budgetrow">
+        <label for="xb-${esc(w)}">Budget</label>
+        <input type="number" step="10" min="0" id="xb-${esc(w)}" data-xbudget="${esc(w)}" value="${X.budget[w]||''}" placeholder="none">
+      </div>
+      ${list.length?`<div class="rows" style="margin-top:12px">`+list.map(i=>`
+        <div class="row">
+          <span class="grow"><span class="clip">${esc(i.name)}${(Number(i.qty)||1)>1?` ×${i.qty}`:''}</span>
+            <div class="meta">${money2(Number(i.cost)||0)}${(Number(i.qty)||1)>1?' each':''}${i.by?' · '+esc(firstName(i.by)):''}</div></span>
+          <button class="status ${i.status}" data-xcycle="${i.id}" title="Tap to change">${XSTATUS[i.status]||'Idea'}</button>
+          <span class="amt" style="width:88px">${money2(xLine(i))}</span>
+          <button class="del" data-xdel="${i.id}" aria-label="Remove">&times;</button>
+        </div>`).join('')+`</div>`
+      :`<div class="meta" style="margin-top:12px">Nothing yet.</div>`}
+    </div>`;
+  }).join('');
+
+  /* ---- manage the list of people ---- */
+  html+=`<div class="acctcard">
+    <div class="head" style="margin-bottom:6px"><strong style="font-size:13.5px">Who we're buying for</strong></div>
+    <div class="filterbar">
+      ${people.map(w=>`<span class="chip">${esc(w)} <button data-xperson="${esc(w)}" aria-label="Remove ${esc(w)}">&times;</button></span>`).join(' ')}
+    </div>
+    <div class="ovrow">
+      <input type="text" id="xNewPerson" placeholder="Add someone">
+      <button class="mini" id="xAddPerson">Add</button>
+    </div>
+  </div>`;
+
+  $('xmasBody').innerHTML=html;
+
+  const sel=$('xWho'), keep=sel.value;
+  sel.innerHTML=people.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join('');
+  if(people.includes(keep)) sel.value=keep;
+}
+
 function renderPauseBar(){
   const bar=$('pauseBar');
   const off=data.recurring.filter(isPaused);
@@ -1202,7 +1416,10 @@ function renderPauseBar(){
 function renderCard(){
   if(!accountsOf('credit').length){ $('cardSection').hidden=true; return; }
   $('cardSection').hidden=false;
-  const owing=sumOf('credit');
+  const owingTotal=sumOf('credit');
+  const revolving=accountsOf('credit').reduce((s,a)=>s+currentBalance(a.id),0);
+  const planBal=accountsOf('credit').reduce((s,a)=>s+planTotal(a.id),0);
+  const owing=owingTotal;
   const limit=accountsOf('credit').reduce((s,a)=>s+(Number(a.limit)||0),0);
   const util=limit>0?Math.min(100,owing/limit*100):0;
   const interest=cardInterestPerMonth(), spend=cardSpendPerMonth(), payoff=payoffEstimate();
@@ -1227,6 +1444,11 @@ function renderCard(){
   $('cardPanel').innerHTML=`<div class="cardpanel">
     <div class="totals"><div class="total-amt" style="color:var(--card)">${money2(owing)}</div>
       <div class="meta">${limit>0?`of ${money2(limit)} limit · ${util.toFixed(0)}% used`:'no limit set'}</div></div>
+    ${planBal>0?`<div class="splitline">
+      <span>${money2(revolving)} revolving at ${(Number(accountsOf('credit')[0].apr)||0).toFixed(2)}%</span>
+      <span>${money2(planBal)} on instalment plans</span>
+      <span>blended ${(accountsOf('credit').reduce((s,a)=>s+blendedRate(a.id),0)/accountsOf('credit').length).toFixed(2)}%</span>
+    </div>`:''}
     ${limit>0?`<div class="util"><span class="${util>70?'hot':''}" style="width:${util}%"></span></div>`:''}
     <div class="cardstats">
       <div class="cardstat"><div class="k">Interest a month</div><div class="v">${interest>0?money2(interest):'—'}</div></div>
@@ -1476,6 +1698,40 @@ function renderRecurring(){
   $('transferList').innerHTML=transfers.length?transfers.map(recRow).join(''):'<div class="empty" style="border-top:0">No transfers yet. Add your card repayment and any savings deposit here.</div>';
 }
 
+function planSection(a){
+  const plans=plansOf(a.id);
+  const rows=plans.map(p=>{
+    const left=planMonthsLeft(p);
+    const step=planStep(Number(p.balance)||0,p);
+    const done=left===Infinity?'never at this instalment'
+      : `${left} month${left===1?'':'s'} left, clears ${addMonths(TODAY,left).toLocaleDateString('en-AU',{month:'short',year:'numeric'})}`;
+    return `<div class="planrow">
+      <div class="head" style="margin-bottom:4px">
+        <div><strong>${esc(p.name||'Instalment plan')}</strong>
+          <span class="meta">· ${money2(p.balance)} at ${(Number(p.apr)||0).toFixed(2)}%</span></div>
+        <button class="del" data-pdel="${a.id}:${p.id}" aria-label="Remove plan">&times;</button>
+      </div>
+      <div class="meta">${money2(p.monthly)} a month · ${done} · ${money2(step.interest)} of this month's instalment is interest</div>
+      <div class="settings">
+        <div><label>Name</label><input type="text" data-pf="name" data-pid="${a.id}:${p.id}" value="${esc(p.name||'')}"></div>
+        <div><label>Outstanding</label><input type="number" step="0.01" data-pf="balance" data-pid="${a.id}:${p.id}" value="${p.balance}"></div>
+        <div><label>Rate % p.a.</label><input type="number" step="0.01" data-pf="apr" data-pid="${a.id}:${p.id}" value="${p.apr}"></div>
+        <div><label>Monthly instalment</label><input type="number" step="0.01" data-pf="monthly" data-pid="${a.id}:${p.id}" value="${p.monthly}"></div>
+        <div><label>Next instalment</label><input type="date" data-pf="next" data-pid="${a.id}:${p.id}" value="${p.next||iso(addMonths(TODAY,1))}"></div>
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="plans">
+    <div class="head" style="margin-bottom:6px">
+      <strong style="font-size:13.5px">Instalment plans</strong>
+      <button class="mini" data-padd="${a.id}">Add a plan</button>
+    </div>
+    <div class="meta" style="margin-bottom:${plans.length?'10px':'0'}">Fixed-rate slices of the balance with their own monthly instalment. They never appear as transactions — the instalment is folded into your minimum payment.</div>
+    ${rows}
+    ${plans.length?`<div class="meta" style="margin-top:10px">Blended rate across everything owing: <strong>${blendedRate(a.id).toFixed(2)}%</strong>, against ${(Number(a.apr)||0).toFixed(2)}% on purchases.</div>`:''}
+  </div>`;
+}
+
 function renderAccounts(){
   const TYPE={everyday:'Everyday',savings:'Savings',credit:'Credit card'};
   if(!data.accounts.length){ $('acctList').innerHTML='<div class="empty">No accounts yet. Add your everyday account first.</div>'; return; }
@@ -1490,8 +1746,9 @@ function renderAccounts(){
         <button class="del" data-adel="${a.id}" aria-label="Delete account">&times;</button>
       </div>
       <div class="nowline">
-        <div><div class="k">${a.type==='credit'?'Owing now':'Balance now'}</div>
-          <div class="nowval${a.type==='credit'?' owe':(now<0?' bad':'')}">${money2(now)}</div></div>
+        <div><div class="k">${a.type==='credit'?(planTotal(a.id)?'Revolving balance':'Owing now'):'Balance now'}</div>
+          <div class="nowval${a.type==='credit'?' owe':(now<0?' bad':'')}">${money2(now)}</div>
+          ${a.type==='credit'&&planTotal(a.id)?`<div class="meta">plus ${money2(planTotal(a.id))} on plans · <strong>${money2(owing(a.id))} total owing</strong></div>`:''}</div>
         <div class="meta${age>21?' staleflag':''}">Set to ${money2(Number(a.balance)||0)} on ${when}${since?`, ${since} entr${since===1?'y':'ies'} since`:''}</div>
       </div>
       <div class="override">
@@ -1505,8 +1762,8 @@ function renderAccounts(){
         <div><label>Interest rate % p.a.</label>
           <input type="number" step="0.01" data-af="apr" data-aid="${a.id}" value="${a.apr==null?'':a.apr}" placeholder="e.g. 19.99"></div>
         <div><label>Credit limit</label>
-          <input type="number" step="1" data-af="limit" data-aid="${a.id}" value="${a.limit==null?'':a.limit}" placeholder="e.g. 10000"></div>
-      </div>`:''}
+          <input type="number" step="1" data-af="limit" data-aid="${a.id}" value="${a.limit==null?'':a.limit}" placeholder="e.g. 40000"></div>
+      </div>`+planSection(a):''}
     </div>`;
   }).join('');
   if(accountsOf('credit').length){
@@ -1555,7 +1812,7 @@ function renderAll(){
   drawChart(); renderFigures(); renderPauseBar(); renderCard(); renderUpcoming();
   renderBand('dashSummary','dashCats',new Date());
   $('monthMeta').textContent=monthName(new Date());
-  renderTrend(); renderSpend(); renderRecurring(); renderCycle(); renderAccounts();
+  renderTrend(); renderSpend(); renderRecurring(); renderCycle(); renderXmas(); renderAccounts();
   updateRecHint();
 }
 
@@ -1567,7 +1824,7 @@ updateEntryForm();
 
 document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x===b)));
-  ['dash','spend','bills','cycle','accounts'].forEach(t=>$('tab-'+t).hidden=(t!==b.dataset.tab));
+  ['dash','spend','bills','cycle','xmas','accounts'].forEach(t=>$('tab-'+t).hidden=(t!==b.dataset.tab));
 }));
 
 $('viewSeg').addEventListener('click',e=>{
@@ -1643,7 +1900,7 @@ $('dashCats').addEventListener('click',e=>{
   const r=e.target.closest('[data-cat]'); if(!r)return;
   catFilter=r.dataset.cat; dayFilter=null; acctFilter=null;
   document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.tab==='spend')));
-  ['dash','spend','bills','cycle','accounts'].forEach(t=>$('tab-'+t).hidden=(t!=='spend'));
+  ['dash','spend','bills','cycle','xmas','accounts'].forEach(t=>$('tab-'+t).hidden=(t!=='spend'));
   renderSpend(); window.scrollTo({top:0,behavior:'smooth'});
 });
 $('filterChip').addEventListener('click',e=>{
@@ -1740,6 +1997,67 @@ function updateEntryForm(){
   $('note').placeholder = k==='income'?'Where from? (e.g. tax refund)'
     : k==='transfer'?'What for?' : 'What was it for?';
 }
+/* ---- Christmas ---- */
+$('xForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const name=$('xName').value.trim();
+  if(!name){$('xName').focus();return;}
+  xmas().items.push({
+    id:uid(), who:$('xWho').value, name,
+    cost:Math.round((parseFloat($('xCost').value)||0)*100)/100,
+    qty:Math.max(1,parseInt($('xQty').value,10)||1),
+    status:$('xStatus').value, by:user?user.email:null
+  });
+  $('xName').value='';$('xCost').value='';$('xQty').value='1';$('xName').focus();
+  renderXmas(); await persist();
+  status('Added');
+});
+
+$('xmasBody').addEventListener('click',async e=>{
+  const cyc=e.target.closest('[data-xcycle]');
+  if(cyc){
+    const i=xmas().items.find(x=>String(x.id)===cyc.dataset.xcycle); if(!i)return;
+    const order=['idea','bought','wrapped'];
+    i.status=order[(order.indexOf(i.status)+1)%order.length];
+    renderXmas(); await persist();
+    return;
+  }
+  const del=e.target.closest('[data-xdel]');
+  if(del){
+    xmas().items=xmas().items.filter(x=>String(x.id)!==del.dataset.xdel);
+    renderXmas(); await persist();
+    return;
+  }
+  const rm=e.target.closest('[data-xperson]');
+  if(rm){
+    const w=rm.dataset.xperson;
+    const n=xmas().items.filter(i=>i.who===w).length;
+    if(!confirm(`Remove ${w}?`+(n?` ${n} present${n===1?'':'s'} will go with them.`:'')))return;
+    xmas().recipients=xmas().recipients.filter(x=>x!==w);
+    xmas().items=xmas().items.filter(i=>i.who!==w);
+    delete xmas().budget[w];
+    renderXmas(); await persist();
+    return;
+  }
+  if(e.target.closest('#xAddPerson')){
+    const box=$('xNewPerson'), w=box.value.trim();
+    if(!w) { box.focus(); return; }
+    if(xmas().recipients.includes(w)){ status('Already on the list.',4000); return; }
+    xmas().recipients.push(w);
+    box.value='';
+    renderXmas(); await persist();
+  }
+});
+
+let xBudgetTimer;
+$('xmasBody').addEventListener('input',e=>{
+  const w=e.target.dataset.xbudget;
+  if(!w) return;
+  const v=parseFloat(e.target.value);
+  if(isNaN(v)||v<=0) delete xmas().budget[w]; else xmas().budget[w]=v;
+  clearTimeout(xBudgetTimer); xBudgetTimer=setTimeout(async()=>{ renderXmas(); await persist(); },900);
+});
+
 $('cyclePrev').addEventListener('click',()=>{ cycleOffset--; pickedDay=null; renderCycle(); });
 $('cycleNext').addEventListener('click',()=>{ cycleOffset++; pickedDay=null; renderCycle(); });
 $('cycleNow').addEventListener('click',()=>{ cycleOffset=0; pickedDay=null; renderCycle(); });
@@ -1873,7 +2191,7 @@ document.addEventListener('click',async e=>{
   }
   if(e.target.closest('#goRecon')){
     document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.tab==='accounts')));
-    ['dash','spend','bills','cycle','accounts'].forEach(t=>$('tab-'+t).hidden=(t!=='accounts'));
+    ['dash','spend','bills','cycle','xmas','accounts'].forEach(t=>$('tab-'+t).hidden=(t!=='accounts'));
     window.scrollTo({top:0,behavior:'smooth'});
   }
 });
@@ -1913,8 +2231,41 @@ $('acctList').addEventListener('change',e=>{
   renderAll();
 });
 
+/* add / remove a plan */
+$('acctList').addEventListener('click',async e=>{
+  const add=e.target.closest('[data-padd]');
+  if(add){
+    const a=acct(Number(add.dataset.padd)); if(!a)return;
+    if(!Array.isArray(a.plans)) a.plans=[];
+    a.plans.push({id:uid(),name:'Instalment plan',balance:0,apr:8.99,monthly:0,
+      next:iso(addMonths(TODAY,1))});
+    renderAll(); await persist();
+    return;
+  }
+  const del=e.target.closest('[data-pdel]');
+  if(del){
+    const [aid,pid]=del.dataset.pdel.split(':');
+    const a=acct(Number(aid)); if(!a||!a.plans)return;
+    const p=a.plans.find(x=>String(x.id)===pid);
+    if(!confirm(`Remove ${p&&p.name?p.name:'this plan'}? Its balance stops being counted.`))return;
+    a.plans=a.plans.filter(x=>String(x.id)!==pid);
+    renderAll(); await persist();
+  }
+});
+
 let editTimer;
 $('acctList').addEventListener('input',e=>{
+  const pf=e.target.dataset.pf;
+  if(pf){
+    const [aid,pid]=e.target.dataset.pid.split(':');
+    const a=acct(Number(aid)); if(!a||!a.plans)return;
+    const p=a.plans.find(x=>String(x.id)===pid); if(!p)return;
+    if(pf==='name'||pf==='next'){ if(pf==='next'&&!e.target.value)return; p[pf]=e.target.value; }
+    else p[pf]=parseFloat(e.target.value)||0;
+    drawChart(); renderFigures(); renderCard(); renderCycle();
+    clearTimeout(editTimer); editTimer=setTimeout(persist,900);
+    return;
+  }
   const f=e.target.dataset.af;
   if(f){
     const a=acct(Number(e.target.dataset.aid)); if(!a)return;
@@ -1932,6 +2283,8 @@ $('export').addEventListener('click',()=>{
   [...data.txns].sort((a,b)=>a.date.localeCompare(b.date))
     .forEach(t=>lines.push([t.kind==='spend'?'Spend':t.kind==='income'?'Income':'Transfer',t.date,t.note,t.category||'',(acct(t.account)||{}).name||'',t.amount.toFixed(2),'',t.by||'']));
   data.recurring.forEach(i=>lines.push([i.kind,i.next,i.name,i.category||'',(acct(i.account)||{}).name||'',i.amount.toFixed(2),FREQ[i.freq],'']));
+  (data.christmas&&data.christmas.items||[]).forEach(i=>lines.push(
+    ['Christmas ('+i.status+')','',i.name,i.who,'',(((Number(i.cost)||0)*(Number(i.qty)||1))).toFixed(2),'x'+(i.qty||1),i.by||'']));
   data.accounts.forEach(a=>lines.push(['Reconciled balance',a.asAt,a.name,a.type,'',(Number(a.balance)||0).toFixed(2),'','']));
   data.accounts.forEach(a=>lines.push(['Balance today',iso(TODAY),a.name,a.type,'',currentBalance(a.id).toFixed(2),'','']));
   const csv=lines.map(r=>r.map(v=>`"${String(v==null?'':v).replace(/"/g,'""')}"`).join(',')).join('\n');
