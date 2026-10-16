@@ -583,9 +583,14 @@ const Store={
 const CATEGORIES=[
   ['Groceries','#0F6B52'],['Eating out','#2E8B6F'],['Fuel','#4FA88C'],['Car','#1C4A5E'],
   ['Utilities','#3A7089'],['Rent / mortgage','#6B4E7D'],['Kids','#A8557A'],['Health','#C06A4E'],
-  ['Shopping','#B5751F'],['Entertainment','#8A8F3C'],['Subscriptions','#5F6B72'],['Other','#9AA3A8']
+  ['Shopping','#B5751F'],['Entertainment','#8A8F3C'],['Subscriptions','#5F6B72'],
+  ['Interest & fees','#8A5A4E'],['Other','#9AA3A8']
 ];
 const COLOUR=Object.fromEntries(CATEGORIES);
+const INTEREST_CAT='Interest & fees';
+/* Interest you've logged yourself is a real charge, but it isn't shopping and
+   it isn't something to estimate on top of — it must never be counted twice. */
+const isInterest=t=>t.kind==='spend'&&t.category===INTEREST_CAT;
 const FREQ={weekly:'Weekly',fortnightly:'Fortnightly',monthly:'Monthly',quarterly:'Quarterly',yearly:'Yearly'};
 const PER_YEAR={weekly:52,fortnightly:26,monthly:12,quarterly:4,yearly:1};
 
@@ -723,7 +728,7 @@ const median=a=>{ if(!a.length) return 0; const s=[...a].sort((x,y)=>x-y), m=s.l
    above the rest — with a week of data one big buy otherwise sets the rate. */
 function spendEstimate(){
   const from=addDays(TODAY,-60);
-  const all=data.txns.filter(t=>t.kind==='spend'&&t.src!=='recurring'
+  const all=data.txns.filter(t=>t.kind==='spend'&&t.src!=='recurring'&&!isInterest(t)
     &&parseISO(t.date)>=from&&parseISO(t.date)<=TODAY);
   const flagged=all.filter(t=>t.oneOff).length;
   const rows=all.filter(t=>!t.oneOff);
@@ -1159,7 +1164,9 @@ function cycleInterest(from,to,days){
 function renderCycle(){
   const target=Number(data.settings.dailyTarget)||0;
   const C=cycleBounds(cycleOffset);
-  const rows=cardSpendBetween(C.start,C.end);
+  const allRows=cardSpendBetween(C.start,C.end);
+  const rows=allRows.filter(t=>!isInterest(t));          // purchases only
+  const loggedInterest=allRows.filter(isInterest).reduce((s,t)=>s+t.amount,0);
   const spent=rows.reduce((s,t)=>s+t.amount,0);
 
   const isPast=C.end<TODAY, isFuture=C.start>TODAY, isNow=!isPast&&!isFuture;
@@ -1171,7 +1178,10 @@ function renderCycle(){
                  : isFuture?target*C.days
                  : spent+remaining*(pace||target);
   const budget=target*C.days;
-  const interest=cycleInterest(C.start,C.end,C.days);
+  // if you've logged the actual charge, use it; only estimate when you haven't
+  const estInterest=cycleInterest(C.start,C.end,C.days);
+  const interest=loggedInterest>0?loggedInterest:estInterest;
+  const interestIsReal=loggedInterest>0;
   const net=projected+interest-C.repayment;   // + means the balance grows
 
   $('cycleTitle').textContent = isNow?'This payment cycle'
@@ -1185,9 +1195,9 @@ function renderCycle(){
   /* ---- figures ---- */
   const aheadBy=target?(target*elapsed-spent):0;
   let html=`<div class="cyclefigs">
-    <div class="cyclefig"><div class="k">${isPast?'Total spent':'Spent so far'}</div>
+    <div class="cyclefig"><div class="k">${isPast?'Purchases':'Purchases so far'}</div>
       <div class="v">${money2(spent)}</div>
-      <div class="n">${pace?money2(pace)+' a day':'nothing logged'}</div></div>
+      <div class="n">${pace?money2(pace)+' a day':'nothing logged'}${loggedInterest>0?` · ${money2(loggedInterest)} interest logged separately`:''}</div></div>
     ${target&&!isFuture?`<div class="cyclefig"><div class="k">Against target</div>
       <div class="v ${aheadBy>=0?'good':'over'}">${aheadBy>=0?'−':'+'}${money2(Math.abs(aheadBy))}</div>
       <div class="n">${aheadBy>=0?'under':'over'}${isNow?` by day ${elapsed}`:' for the cycle'}</div></div>`:''}
@@ -1203,13 +1213,15 @@ function renderCycle(){
   if(C.repayment){
     const be=Math.max(0,C.repayment-interest);
     if(isPast){
+      const src=interestIsReal?'of interest you logged':'of estimated interest';
       html+= net>0
-        ? `<div class="verdictbig bad">That cycle put <strong>${money2(spent)}</strong> on the card. With ${money2(interest)} of interest against the ${money2(C.repayment)} repayment, the balance <strong>grew by ${money2(net)}</strong>. Break-even would have been ${money2(be/C.days)} a day.</div>`
-        : `<div class="verdictbig good">That cycle put <strong>${money2(spent)}</strong> on the card. With ${money2(interest)} of interest against the ${money2(C.repayment)} repayment, the balance <strong>fell by ${money2(-net)}</strong>.</div>`;
+        ? `<div class="verdictbig bad">That cycle put <strong>${money2(spent)}</strong> of purchases on the card. With ${money2(interest)} ${src} against the ${money2(C.repayment)} repayment, the balance <strong>grew by ${money2(net)}</strong>. Break-even would have been ${money2(be/C.days)} a day of purchases.</div>`
+        : `<div class="verdictbig good">That cycle put <strong>${money2(spent)}</strong> of purchases on the card. With ${money2(interest)} ${src} against the ${money2(C.repayment)} repayment, the balance <strong>fell by ${money2(-net)}</strong>.</div>`;
     } else {
+      const src2=interestIsReal?'of interest you logged':'of estimated interest';
       html+= net>0
-        ? `<div class="verdictbig bad">On this pace you'll put <strong>${money2(projected)}</strong> on the card this cycle. Add ${money2(interest)} of interest, against a ${money2(C.repayment)} repayment — the balance <strong>grows by ${money2(net)}</strong>.
-           To break even you'd need to hold spending to ${money2(be)} across the ${C.days} days, or ${money2(be/C.days)} a day.</div>`
+        ? `<div class="verdictbig bad">On this pace you'll put <strong>${money2(projected)}</strong> of purchases on the card this cycle. Add ${money2(interest)} ${src2}, against a ${money2(C.repayment)} repayment — the balance <strong>grows by ${money2(net)}</strong>.
+           To break even you'd need to hold purchases to ${money2(be)} across the ${C.days} days, or ${money2(be/C.days)} a day.</div>`
         : `<div class="verdictbig good">On this pace you'll put <strong>${money2(projected)}</strong> on the card, plus ${money2(interest)} interest, against a ${money2(C.repayment)} repayment — the balance <strong>falls by ${money2(-net)}</strong> this cycle.
            Keep that up and it clears steadily.</div>`;
     }
@@ -1234,7 +1246,7 @@ function renderCycle(){
     labels+=`<span>${d.getDate()}</span>`;
   }
   html+=`<h2>Day by day</h2>
-    <div class="meta" style="margin-bottom:4px">${target?`Amber bars are days over the ${money2(target)} target. `:''}Tap a bar to see what was bought.</div>
+    <div class="meta" style="margin-bottom:4px">${target?`Amber bars are days over the ${money2(target)} target. `:''}Tap a bar to see what was bought.${loggedInterest>0?` Interest charges are left out of these bars.`:''}</div>
     <div class="daybars">${bars}</div><div class="daylabels">${labels}</div>`;
 
   /* ---- what was spent on the selected day ---- */
@@ -1288,6 +1300,14 @@ function renderCycle(){
           <span class="amt" style="width:96px">${money2(sp)}</span></div>`;
       }).join('')+`</div>
       <div class="meta" style="margin-top:8px">Right-hand figure is spending against the ${money2(C.repayment)} repayment — a plus means the balance grew that cycle.</div>`;
+  }
+
+  if(C.repayment){
+    html+=`<div class="meta" style="margin-top:18px">`+
+      (interestIsReal
+        ? `Interest for this cycle uses the ${money2(loggedInterest)} you logged under “${INTEREST_CAT}”, so nothing is counted twice. The modelled figure would have been ${money2(estInterest)}.`
+        : `No interest logged for this cycle, so ${money2(estInterest)} is estimated from the balance and rate. Log the real charge under “${INTEREST_CAT}” and it'll use that instead.`)+
+      `</div>`;
   }
 
   $('cycleBody').innerHTML=html;
