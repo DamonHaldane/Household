@@ -609,7 +609,7 @@ const uid=()=>Date.now()+Math.floor(Math.random()*1000);
 let cursor=new Date(), horizon=90, includeVariable=true, view='everyday';
 let chartGeom=null, catFilter=null, editingId=null, acctFilter=null, dayFilter=null;
 let showHistory=true, historyDays=180;
-let cycleOffset=0, pickedDay=null, searchTerm='';
+let cycleOffset=0, pickedDay=null, searchTerm='', xEditingId=null;
 const TODAY=parseISO(iso(new Date()));
 
 function status(m,ms=2200){$('status').textContent=m;if(ms)setTimeout(()=>{if($('status').textContent===m)$('status').textContent='';},ms);}
@@ -1152,6 +1152,19 @@ function avgCardBalance(from,to){
   return ids.reduce((s,id)=>s+currentBalance(id),0);   // nothing recorded yet
 }
 
+/* The bank bills interest monthly; the tracker runs fortnightly. Taking the
+   charge whole in whichever cycle it lands makes one fortnight look terrible
+   and the next look free. So turn the real charges into a daily rate and give
+   each cycle the share it actually accrued. */
+function loggedInterestPerDay(){
+  const from=addDays(TODAY,-150);
+  const rows=data.txns.filter(t=>isInterest(t)&&parseISO(t.date)>=from&&parseISO(t.date)<=TODAY);
+  if(!rows.length) return null;
+  const total=rows.reduce((s,t)=>s+t.amount,0);
+  // each monthly charge covers roughly a month
+  return {perDay:total/(rows.length*30.44), charges:rows.length, total};
+}
+
 function cycleInterest(from,to,days){
   // the snapshots hold total owing, so cost it at the blended rate
   const bal=avgCardBalance(from,to);
@@ -1178,10 +1191,11 @@ function renderCycle(){
                  : isFuture?target*C.days
                  : spent+remaining*(pace||target);
   const budget=target*C.days;
-  // if you've logged the actual charge, use it; only estimate when you haven't
+  // smooth the monthly charge across the days it actually covers
   const estInterest=cycleInterest(C.start,C.end,C.days);
-  const interest=loggedInterest>0?loggedInterest:estInterest;
-  const interestIsReal=loggedInterest>0;
+  const lg=loggedInterestPerDay();
+  const interest=lg?lg.perDay*C.days:estInterest;
+  const interestIsReal=!!lg;
   const net=projected+interest-C.repayment;   // + means the balance grows
 
   $('cycleTitle').textContent = isNow?'This payment cycle'
@@ -1213,12 +1227,12 @@ function renderCycle(){
   if(C.repayment){
     const be=Math.max(0,C.repayment-interest);
     if(isPast){
-      const src=interestIsReal?'of interest you logged':'of estimated interest';
+      const src=interestIsReal?'of interest (your charges, spread daily)':'of estimated interest';
       html+= net>0
         ? `<div class="verdictbig bad">That cycle put <strong>${money2(spent)}</strong> of purchases on the card. With ${money2(interest)} ${src} against the ${money2(C.repayment)} repayment, the balance <strong>grew by ${money2(net)}</strong>. Break-even would have been ${money2(be/C.days)} a day of purchases.</div>`
         : `<div class="verdictbig good">That cycle put <strong>${money2(spent)}</strong> of purchases on the card. With ${money2(interest)} ${src} against the ${money2(C.repayment)} repayment, the balance <strong>fell by ${money2(-net)}</strong>.</div>`;
     } else {
-      const src2=interestIsReal?'of interest you logged':'of estimated interest';
+      const src2=interestIsReal?'of interest (your charges, spread daily)':'of estimated interest';
       html+= net>0
         ? `<div class="verdictbig bad">On this pace you'll put <strong>${money2(projected)}</strong> of purchases on the card this cycle. Add ${money2(interest)} ${src2}, against a ${money2(C.repayment)} repayment — the balance <strong>grows by ${money2(net)}</strong>.
            To break even you'd need to hold purchases to ${money2(be)} across the ${C.days} days, or ${money2(be/C.days)} a day.</div>`
@@ -1305,8 +1319,9 @@ function renderCycle(){
   if(C.repayment){
     html+=`<div class="meta" style="margin-top:18px">`+
       (interestIsReal
-        ? `Interest for this cycle uses the ${money2(loggedInterest)} you logged under “${INTEREST_CAT}”, so nothing is counted twice. The modelled figure would have been ${money2(estInterest)}.`
-        : `No interest logged for this cycle, so ${money2(estInterest)} is estimated from the balance and rate. Log the real charge under “${INTEREST_CAT}” and it'll use that instead.`)+
+        ? `Your bank charges interest monthly but this tracker runs fortnightly, so the ${lg.charges} charge${lg.charges===1?'':'s'} you've logged (${money2(lg.total)}) are spread to ${money2(lg.perDay)} a day — ${money2(interest)} for these ${C.days} days. That keeps every cycle comparable instead of one carrying the whole month.`+
+          (loggedInterest>0?` A charge of ${money2(loggedInterest)} actually landed inside this cycle; it's counted in the daily spread above, not on top.`:'')
+        : `No interest charges logged yet, so ${money2(estInterest)} is estimated from the balance and rate. Log each charge under “${INTEREST_CAT}” and it'll use your real figures instead.`)+
       `</div>`;
   }
 
@@ -1318,6 +1333,29 @@ function renderCycle(){
 const XSTATUS={idea:'Idea',bought:'Bought',wrapped:'Wrapped'};
 const xmas=()=>data.christmas;
 const xLine=i=>(Number(i.cost)||0)*(Number(i.qty)||1);
+
+function xEditForm(i,people){
+  return `<div class="editform" data-xediting="${i.id}">
+    <div class="ef-row">
+      <input type="text" data-xf="name" value="${esc(i.name)}" placeholder="What is it?" aria-label="Present">
+      <select data-xf="who" aria-label="Who it's for">
+        ${people.map(w=>`<option value="${esc(w)}"${w===i.who?' selected':''}>${esc(w)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="ef-row">
+      <input type="number" step="0.01" min="0" data-xf="cost" value="${(Number(i.cost)||0)||''}" placeholder="Cost each" aria-label="Cost">
+      <input type="number" step="1" min="1" data-xf="qty" value="${Number(i.qty)||1}" placeholder="Qty" aria-label="Quantity">
+      <select data-xf="status" aria-label="Status">
+        ${Object.keys(XSTATUS).map(k=>`<option value="${k}"${i.status===k?' selected':''}>${XSTATUS[k]}</option>`).join('')}
+      </select>
+    </div>
+    <div class="ef-actions">
+      <button class="add" data-xsave="${i.id}">Save</button>
+      <button class="mini" data-xcancel="1">Cancel</button>
+      <button class="del" data-xdel="${i.id}" aria-label="Remove" style="margin-left:auto">&times;</button>
+    </div>
+  </div>`;
+}
 
 function renderXmas(){
   const X=xmas();
@@ -1383,12 +1421,14 @@ function renderXmas(){
         <label for="xb-${esc(w)}">Budget</label>
         <input type="number" step="10" min="0" id="xb-${esc(w)}" data-xbudget="${esc(w)}" value="${X.budget[w]||''}" placeholder="none">
       </div>
-      ${list.length?`<div class="rows" style="margin-top:12px">`+list.map(i=>`
+      ${list.length?`<div class="rows" style="margin-top:12px">`+list.map(i=>
+        String(i.id)===String(xEditingId) ? xEditForm(i,people) : `
         <div class="row">
           <span class="grow"><span class="clip">${esc(i.name)}${(Number(i.qty)||1)>1?` ×${i.qty}`:''}</span>
-            <div class="meta">${money2(Number(i.cost)||0)}${(Number(i.qty)||1)>1?' each':''}${i.by?' · '+esc(firstName(i.by)):''}</div></span>
+            <div class="meta">${(Number(i.cost)||0)>0?money2(Number(i.cost)||0)+((Number(i.qty)||1)>1?' each':''):'no price yet'}${i.by?' · '+esc(firstName(i.by)):''}</div></span>
           <button class="status ${i.status}" data-xcycle="${i.id}" title="Tap to change">${XSTATUS[i.status]||'Idea'}</button>
-          <span class="amt" style="width:88px">${money2(xLine(i))}</span>
+          <span class="amt" style="width:88px">${(Number(i.cost)||0)>0?money2(xLine(i)):'—'}</span>
+          <button class="mini" data-xedit="${i.id}">Edit</button>
           <button class="del" data-xdel="${i.id}" aria-label="Remove">&times;</button>
         </div>`).join('')+`</div>`
       :`<div class="meta" style="margin-top:12px">Nothing yet.</div>`}
@@ -2034,16 +2074,48 @@ $('xForm').addEventListener('submit',async e=>{
 });
 
 $('xmasBody').addEventListener('click',async e=>{
+  const ed=e.target.closest('[data-xedit]');
+  if(ed){ xEditingId=ed.dataset.xedit; renderXmas(); return; }
+  if(e.target.closest('[data-xcancel]')){ xEditingId=null; renderXmas(); return; }
+
+  const sv=e.target.closest('[data-xsave]');
+  if(sv){
+    const i=xmas().items.find(x=>String(x.id)===sv.dataset.xsave); if(!i)return;
+    const box=sv.closest('.editform');
+    const get=k=>{const el=box.querySelector(`[data-xf="${k}"]`);return el?el.value:null;};
+    const name=(get('name')||'').trim();
+    if(!name){ box.querySelector('[data-xf="name"]').focus(); status('Give it a name.',4000); return; }
+    i.name=name;
+    i.who=get('who');
+    i.cost=Math.round((parseFloat(get('cost'))||0)*100)/100;
+    i.qty=Math.max(1,parseInt(get('qty'),10)||1);
+    i.status=get('status');
+    xEditingId=null;
+    renderXmas(); await persist();
+    status('Updated');
+    return;
+  }
+
   const cyc=e.target.closest('[data-xcycle]');
   if(cyc){
     const i=xmas().items.find(x=>String(x.id)===cyc.dataset.xcycle); if(!i)return;
     const order=['idea','bought','wrapped'];
     i.status=order[(order.indexOf(i.status)+1)%order.length];
+    // moving an idea to bought without a price is the moment to ask for one
+    if(i.status==='bought'&&!(Number(i.cost)>0)){
+      xEditingId=String(i.id);
+      renderXmas(); await persist();
+      const box=document.querySelector('[data-xf="cost"]');
+      if(box) box.focus();
+      status('What did it actually cost?',5000);
+      return;
+    }
     renderXmas(); await persist();
     return;
   }
   const del=e.target.closest('[data-xdel]');
   if(del){
+    xEditingId=null;
     xmas().items=xmas().items.filter(x=>String(x.id)!==del.dataset.xdel);
     renderXmas(); await persist();
     return;
