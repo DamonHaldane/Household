@@ -1186,10 +1186,20 @@ function renderCycle(){
   const elapsed=isNow?Math.min(C.days,Math.max(1,Math.round((TODAY-C.start)/86400000)+1))
                 : isPast?C.days:0;
   const remaining=Math.max(0,C.days-elapsed);
-  const pace=elapsed?spent/elapsed:0;
+
+  /* Today is still in progress — at 9am it's nearly empty and would drag the
+     average down. Work the daily rate from completed days only. */
+  const todayKey=iso(TODAY);
+  const todaySoFar=isNow?rows.filter(t=>t.date===todayKey).reduce((s,t)=>s+t.amount,0):0;
+  const completed=isPast?C.days:Math.max(0,elapsed-1);
+  const spentCompleted=isNow?spent-todaySoFar:spent;
+  const pace=completed>0?spentCompleted/completed:0;
+  const noPaceYet=isNow&&completed===0;
+
   const projected=isPast?spent
-                 : isFuture?target*C.days
-                 : spent+remaining*(pace||target);
+    : isFuture?target*C.days
+    : noPaceYet ? spent+(C.days-elapsed)*target+Math.max(0,target-todaySoFar)
+    : spentCompleted+Math.max(todaySoFar,pace)+pace*remaining;
   const budget=target*C.days;
   // smooth the monthly charge across the days it actually covers
   const estInterest=cycleInterest(C.start,C.end,C.days);
@@ -1207,14 +1217,15 @@ function renderCycle(){
     (C.repayment?` · ${money2(C.repayment)} repayment`:'');
 
   /* ---- figures ---- */
-  const aheadBy=target?(target*elapsed-spent):0;
+  const judgeDays=isPast?C.days:completed;
+  const aheadBy=target?(target*judgeDays-spentCompleted):0;
   let html=`<div class="cyclefigs">
     <div class="cyclefig"><div class="k">${isPast?'Purchases':'Purchases so far'}</div>
       <div class="v">${money2(spent)}</div>
-      <div class="n">${pace?money2(pace)+' a day':'nothing logged'}${loggedInterest>0?` · ${money2(loggedInterest)} interest logged separately`:''}</div></div>
-    ${target&&!isFuture?`<div class="cyclefig"><div class="k">Against target</div>
+      <div class="n">${pace?money2(pace)+' a day over '+completed+' full day'+(completed===1?'':'s'):(noPaceYet?'first day, no rate yet':'nothing logged')}${loggedInterest>0?` · ${money2(loggedInterest)} interest logged separately`:''}</div></div>
+    ${target&&!isFuture&&judgeDays>0?`<div class="cyclefig"><div class="k">Against target</div>
       <div class="v ${aheadBy>=0?'good':'over'}">${aheadBy>=0?'−':'+'}${money2(Math.abs(aheadBy))}</div>
-      <div class="n">${aheadBy>=0?'under':'over'}${isNow?` by day ${elapsed}`:' for the cycle'}</div></div>`:''}
+      <div class="n">${aheadBy>=0?'under':'over'}${isNow?` after ${judgeDays} full day${judgeDays===1?'':'s'}`:' for the cycle'}</div></div>`:''}
     ${isPast?'':`<div class="cyclefig"><div class="k">Projected by ${C.end.toLocaleDateString('en-AU',{day:'numeric',month:'short'})}</div>
       <div class="v ${target&&projected>budget?'watch':''}">${money2(projected)}</div>
       <div class="n">${target?`target ${money2(budget)}`:'at current pace'}</div></div>`}
@@ -1259,6 +1270,12 @@ function renderCycle(){
       <span class="b" style="height:${Math.max(2,(v/maxDay)*100)}%"></span></div>`;
     labels+=`<span>${d.getDate()}</span>`;
   }
+  if(isNow&&!noPaceYet){
+    html+=`<div class="meta" style="margin:-10px 0 20px">Rate and projection use the ${completed} completed day${completed===1?'':'s'} — today (${money2(todaySoFar)} so far) is still running, so counting it would drag the average down.</div>`;
+  } else if(noPaceYet){
+    html+=`<div class="meta" style="margin:-10px 0 20px">First day of the cycle, so there's no completed day to average yet — the projection uses your ${money2(target)} target.</div>`;
+  }
+
   html+=`<h2>Day by day</h2>
     <div class="meta" style="margin-bottom:4px">${target?`Amber bars are days over the ${money2(target)} target. `:''}Tap a bar to see what was bought.${loggedInterest>0?` Interest charges are left out of these bars.`:''}</div>
     <div class="daybars">${bars}</div><div class="daylabels">${labels}</div>`;
