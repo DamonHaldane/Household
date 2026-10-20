@@ -609,7 +609,7 @@ const uid=()=>Date.now()+Math.floor(Math.random()*1000);
 let cursor=new Date(), horizon=90, includeVariable=true, view='everyday';
 let chartGeom=null, catFilter=null, editingId=null, acctFilter=null, dayFilter=null;
 let showHistory=true, historyDays=180;
-let cycleOffset=0, pickedDay=null, searchTerm='', xEditingId=null;
+let cycleOffset=0, pickedDay=null, searchTerm='', xEditingId=null, txEditingId=null;
 const TODAY=parseISO(iso(new Date()));
 
 function status(m,ms=2200){$('status').textContent=m;if(ms)setTimeout(()=>{if($('status').textContent===m)$('status').textContent='';},ms);}
@@ -1596,6 +1596,35 @@ const matches=(t,q)=>{
   return q.split(/\s+/).filter(Boolean).every(w=>hay.includes(w));
 };
 
+function txEditForm(t){
+  const opts=(sel,prefix)=>data.accounts.map(a=>
+    `<option value="${a.id}"${a.id===sel?' selected':''}>${prefix||''}${esc(a.name)}</option>`).join('');
+  return `<div class="editform" data-txediting="${t.id}">
+    <div class="ef-row">
+      <select data-tf="kind" aria-label="Type">
+        ${['spend','income','transfer'].map(k=>`<option value="${k}"${t.kind===k?' selected':''}>${k==='spend'?'Spend':k==='income'?'Income':'Transfer'}</option>`).join('')}
+      </select>
+      <input type="number" step="0.01" min="0" data-tf="amount" value="${t.amount}" aria-label="Amount">
+      <input type="date" data-tf="date" value="${t.date}" aria-label="Date">
+    </div>
+    <div class="ef-row">
+      <select data-tf="account" aria-label="Account">${opts(t.account)}</select>
+      <select data-tf="to" aria-label="Into account"${t.kind==='transfer'?'':' hidden'}>${opts(t.to,'into ')}</select>
+      <select data-tf="category" aria-label="Category"${t.kind==='spend'?'':' hidden'}>
+        ${CATEGORIES.map(([c])=>`<option value="${c}"${t.category===c?' selected':''}>${c}</option>`).join('')}
+      </select>
+    </div>
+    <div class="ef-row">
+      <input type="text" data-tf="note" value="${esc(t.note||'')}" placeholder="Note" aria-label="Note">
+    </div>
+    <div class="ef-actions">
+      <button class="add" data-tsave="${t.id}">Save</button>
+      <button class="mini" data-tcancel="1">Cancel</button>
+      <button class="del" data-del="${t.id}" aria-label="Delete" style="margin-left:auto">&times;</button>
+    </div>
+  </div>`;
+}
+
 function renderSpend(){
   $('monthLabel').textContent=monthName(cursor);
   const q=searchTerm.trim().toLowerCase();
@@ -1689,6 +1718,7 @@ function renderSpend(){
     const dayTotal=g.items.filter(t=>t.kind==='spend').reduce((s,t)=>s+t.amount,0);
     return `<div class="dayhead" data-day="${g.date}" title="Show only this day">${label}${dayTotal>0?` · ${money2(dayTotal)}`:''}</div>`+
       g.items.map(t=>{
+        if(String(t.id)===String(txEditingId)) return txEditForm(t);
         const inc=t.kind==='income', tr=t.kind==='transfer';
         const c=inc?'var(--accent)':tr?'var(--ink-faint)':(COLOUR[t.category]||'#9AA3A8');
         const title=t.note||(inc?'Income':tr?'Transfer':t.category);
@@ -1701,6 +1731,7 @@ function renderSpend(){
           <div class="meta">${what} · ${where}${t.src==='recurring'?' · scheduled':''}${t.oneOff?' · not in the estimate':''}${t.by?' · '+esc(firstName(t.by)):''}</div></span>
         <span class="amt${inc?' in':''}" style="width:98px">${inc?'+':tr?'':''}${money2(t.amount)}</span>
         ${t.kind==='spend'&&t.src!=='recurring'?`<button class="oneoff${t.oneOff?' on':''}" data-oneoff="${t.id}" title="Leave this out of the everyday spending estimate">${t.oneOff?'one-off':'regular'}</button>`:''}
+        <button class="mini" data-tedit="${t.id}">Edit</button>
         <button class="del" data-del="${t.id}" aria-label="Delete">&times;</button></div>`;
       }).join('');
   }).join('');
@@ -2041,6 +2072,33 @@ $('entry').addEventListener('submit',async e=>{
 });
 
 $('list').addEventListener('click',async e=>{
+  const ed=e.target.closest('[data-tedit]');
+  if(ed){ txEditingId=ed.dataset.tedit; renderSpend(); return; }
+  if(e.target.closest('[data-tcancel]')){ txEditingId=null; renderSpend(); return; }
+
+  const sv=e.target.closest('[data-tsave]');
+  if(sv){
+    const t=data.txns.find(x=>String(x.id)===sv.dataset.tsave); if(!t)return;
+    const box=sv.closest('.editform');
+    const get=k=>{const el=box.querySelector(`[data-tf="${k}"]`);return el?el.value:null;};
+    const amount=parseFloat(get('amount'));
+    if(!(amount>0)){ box.querySelector('[data-tf="amount"]').focus(); status('Amount has to be more than zero.',4000); return; }
+    const kind=get('kind'), from=Number(get('account'));
+    if(kind==='transfer'&&Number(get('to'))===from){ status('A transfer needs two different accounts.',5000); return; }
+    t.kind=kind;
+    t.amount=Math.round(amount*100)/100;
+    t.date=get('date')||t.date;
+    t.account=from;
+    t.note=(get('note')||'').trim();
+    t.category=kind==='spend'?get('category'):null;
+    if(kind==='transfer') t.to=Number(get('to')); else delete t.to;
+    txEditingId=null;
+    cursor=parseISO(t.date);
+    renderAll(); await persist();
+    status('Updated');
+    return;
+  }
+
   const oo=e.target.closest('[data-oneoff]');
   if(oo){
     const t=data.txns.find(x=>String(x.id)===oo.dataset.oneoff); if(!t)return;
@@ -2050,6 +2108,7 @@ $('list').addEventListener('click',async e=>{
     return;
   }
   const b=e.target.closest('[data-del]'); if(!b)return;
+  txEditingId=null;
   data.txns=data.txns.filter(t=>String(t.id)!==b.dataset.del);
   renderAll(); await persist();
 });
@@ -2198,6 +2257,14 @@ $('eKind').addEventListener('change',()=>{
 $('rKind').addEventListener('change',updateRecHint);
 
 document.addEventListener('change',e=>{
+  if(e.target.dataset&&e.target.dataset.tf==='kind'){
+    const box=e.target.closest('.editform'); if(!box)return;
+    const k=e.target.value;
+    const to=box.querySelector('[data-tf="to"]'), cat=box.querySelector('[data-tf="category"]');
+    if(to) to.hidden=(k!=='transfer');
+    if(cat) cat.hidden=(k!=='spend');
+    return;
+  }
   if(e.target.dataset&&e.target.dataset.ef==='kind'){
     const box=e.target.closest('.editform'); if(!box)return;
     const k=e.target.value;
